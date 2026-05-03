@@ -19,7 +19,7 @@
         #compass-status { position: absolute; top: 10px; right: 10px; width: 14px; height: 14px; border-radius: 50%; background: red; z-index: 20; }
         #compass-status.active { background: #00ff00; }
         #info { background: rgba(0,0,0,0.7); padding: 10px; font-size: 20px; text-align: center; font-weight: 500; z-index: 10; pointer-events: none; }
-        .controls-container { pointer-events: auto; } /* ενεργοποιεί τα κουμπιά */
+        .controls-container { pointer-events: auto; }
         #point-list { max-height: 80px; overflow-y: auto; background: rgba(0,0,0,0.6); margin: 5px 5px 0 5px; padding: 8px; font-size: 14px; z-index: 10; pointer-events: auto; }
         #controls { background: rgba(0,0,0,0.7); padding: 16px 10px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; align-items: center; z-index: 10; pointer-events: auto; }
         button { padding: 14px 20px; font-size: 18px; border: none; border-radius: 12px; background: #007aff; color: white; font-weight: 600; cursor: pointer; min-height: 48px; min-width: 80px; transition: opacity 0.1s; z-index: 10; }
@@ -43,7 +43,8 @@
                     <button id="enable-compass-btn">🧭 Ενεργοποίηση Πυξίδας</button>
                     <button id="undo-btn">↩️ Ακύρωση</button>
                     <button id="clear-btn">🗑️ Καθαρισμός</button>
-                    <button id="export-btn">💾 Δημιουργία αρχείου</button>
+                    <button id="export-btn">💾 Αποθήκευση</button>
+                    <button id="share-btn">📤 Αποστολή</button>
                     <div class="settings">
                         <span>VFOV:</span>
                         <input type="number" id="vfov-input" value="72" step="1" min="30" max="90"><span>°</span>
@@ -64,6 +65,7 @@
             const undoBtn = document.getElementById('undo-btn');
             const clearBtn = document.getElementById('clear-btn');
             const exportBtn = document.getElementById('export-btn');
+            const shareBtn = document.getElementById('share-btn');
             const vfovInput = document.getElementById('vfov-input');
             const backHorizonInput = document.getElementById('back-horizon-input');
             const compassStatus = document.getElementById('compass-status');
@@ -132,7 +134,7 @@
                 const rect = video.getBoundingClientRect();
                 const y = clientY - rect.top;
                 const centerY = rect.height / 2;
-                const delta = centerY - y; // θετικό πάνω από το κέντρο
+                const delta = centerY - y;
                 const vfov = parseFloat(vfovInput.value) || 72;
                 const maxAngle = vfov / 2;
                 let elevation = (delta / centerY) * maxAngle;
@@ -142,7 +144,6 @@
             
             // ---------- Χειρισμός αγγίγματος ----------
             function onScreenTap(e) {
-                // Ενεργό μόνο αν η πυξίδα είναι ενεργή
                 if (!compassActive || currentHeading === null) return;
                 
                 let clientY;
@@ -159,13 +160,11 @@
                 elSpan.textContent = elevation.toFixed(1);
                 updatePointList();
                 
-                // Οπτική ανάδραση
                 const line = document.getElementById('horizon-line');
                 line.style.background = 'rgba(0,255,0,0.9)';
                 setTimeout(() => { line.style.background = 'rgba(0,255,0,0.4)'; }, 200);
             }
             
-            // Συνδέουμε τα events στο appDiv, αλλά αγνοούμε αν ο στόχος είναι κουμπί/input
             appDiv.addEventListener('touchstart', (e) => {
                 const target = e.target;
                 if (target.tagName === 'BUTTON' || target.tagName === 'INPUT') return;
@@ -202,11 +201,11 @@
                 updatePointList();
             });
             
-            // ---------- Εξαγωγή ----------
-            function exportHorizonFile() {
+            // ---------- Δημιουργία του αρχείου (επιστρέφει Blob και όνομα) ----------
+            function generateHorizonBlob() {
                 if (points.length < 2) {
                     alert('Χρειάζονται τουλάχιστον 2 σημεία για παρεμβολή.');
-                    return;
+                    return null;
                 }
                 const backHorizon = parseFloat(backHorizonInput.value) || 90;
                 let horizon = new Array(360).fill(backHorizon);
@@ -238,7 +237,14 @@
                 for (let i = 0; i < 360; i++) {
                     content += horizon[i].toFixed(2) + '\n';
                 }
-                const blob = new Blob([content], { type: 'text/plain' });
+                return new Blob([content], { type: 'text/plain' });
+            }
+            
+            // ---------- Αποθήκευση (Download) ----------
+            function downloadHorizonFile() {
+                const blob = generateHorizonBlob();
+                if (!blob) return;
+                
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
@@ -249,7 +255,34 @@
                 URL.revokeObjectURL(url);
             }
             
-            exportBtn.addEventListener('click', exportHorizonFile);
+            // ---------- Αποστολή (Share Sheet) ----------
+            async function shareHorizonFile() {
+                const blob = generateHorizonBlob();
+                if (!blob) return;
+                
+                const file = new File([blob], 'horizon_PVGIS.txt', { type: 'text/plain' });
+                
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    try {
+                        await navigator.share({
+                            title: 'Αρχείο Ορίζοντα PVGIS',
+                            text: 'Επισυνάπτεται το αρχείο ορίζοντα για το PVGIS.',
+                            files: [file]
+                        });
+                    } catch (err) {
+                        if (err.name !== 'AbortError') {
+                            alert('Σφάλμα κοινοποίησης: ' + err.message);
+                        }
+                    }
+                } else {
+                    // Fallback: άνοιγμα σε νέα καρτέλα ή download
+                    alert('Η συσκευή δεν υποστηρίζει άμεση αποστολή αρχείου. Θα γίνει λήψη του αρχείου.');
+                    downloadHorizonFile();
+                }
+            }
+            
+            exportBtn.addEventListener('click', downloadHorizonFile);
+            shareBtn.addEventListener('click', shareHorizonFile);
             
             // ---------- Εκκίνηση ----------
             enableCompassBtn.addEventListener('click', requestCompassPermission);
