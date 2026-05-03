@@ -7,6 +7,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#000000">
+    <link rel="manifest" href="data:application/json, {}">
     <style>
         * { margin:0; padding:0; box-sizing: border-box; }
         html, body { height: 100%; overflow: hidden; background: black; font-family: -apple-system, sans-serif; color: white; }
@@ -23,7 +24,7 @@
         .settings { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         input[type=number] { width: 60px; padding: 4px; font-size: 16px; }
         .hidden { display: none; }
-        #compass-status { position: absolute; top: 10px; right: 10px; width: 12px; height: 12px; border-radius: 50%; background: red; }
+        #compass-status { position: absolute; top: 10px; right: 10px; width: 12px; height: 12px; border-radius: 50%; background: red; z-index: 10; }
         #compass-status.active { background: #00ff00; }
     </style>
 </head>
@@ -54,8 +55,6 @@
     <script>
         (function() {
             const video = document.getElementById('video');
-            const canvas = document.getElementById('canvas');
-            const ctx = canvas.getContext('2d');
             const azSpan = document.getElementById('az-value');
             const elSpan = document.getElementById('el-value');
             const pointListDiv = document.getElementById('point-list');
@@ -85,58 +84,61 @@
                 }
             }
             
-            // ---------- Πυξίδα ----------
-            function enableCompass() {
-                if (typeof DeviceOrientationEvent !== 'undefined') {
-                    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                        DeviceOrientationEvent.requestPermission()
-                        .then(response => {
-                            if (response === 'granted') {
-                                window.addEventListener('deviceorientation', handleOrientation, true);
-                                compassActive = true;
-                                enableCompassBtn.classList.add('hidden');
-                                compassStatus.classList.add('active');
-                                video.addEventListener('touchstart', onVideoTouch);
-                                video.addEventListener('click', onVideoClick);
-                            } else {
-                                alert('Δεν επιτράπηκε η πυξίδα.');
-                            }
-                        })
-                        .catch(console.error);
-                    } else {
-                        window.addEventListener('deviceorientation', handleOrientation, true);
-                        compassActive = true;
-                        enableCompassBtn.classList.add('hidden');
-                        compassStatus.classList.add('active');
-                        video.addEventListener('touchstart', onVideoTouch);
-                        video.addEventListener('click', onVideoClick);
-                    }
-                } else {
-                    alert('Ο browser δεν υποστηρίζει προσανατολισμό συσκευής.');
+            // ---------- Πυξίδα (αναβαθμισμένη έκδοση) ----------
+            function handleOrientation(event) {
+                let heading = null;
+                if (event.webkitCompassHeading !== undefined) {
+                    // iOS
+                    heading = event.webkitCompassHeading;
+                } else if (event.absolute === true) {
+                    // Android / σύγχρονα Chrome
+                    heading = 360 - event.alpha;
+                    if (heading < 0) heading += 360;
+                }
+                if (heading !== null && heading !== currentHeading) {
+                    currentHeading = heading;
+                    azSpan.textContent = currentHeading.toFixed(1);
                 }
             }
             
-            function handleOrientation(event) {
-                let heading;
-                if (event.webkitCompassHeading) {
-                    heading = event.webkitCompassHeading;
-                } else if (event.absolute && event.alpha !== null) {
-                    heading = 360 - event.alpha;
-                    if (heading < 0) heading += 360;
-                } else {
+            function requestPermissionAndListen() {
+                if (typeof DeviceOrientationEvent === 'undefined') {
+                    alert('Ο browser δεν υποστηρίζει προσανατολισμό συσκευής.');
                     return;
                 }
-                currentHeading = heading;
-                // Εμφάνιση ως PVGIS στο HUD
-                azSpan.textContent = geoPvgis(heading).toFixed(1);
+                
+                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    // iOS 13+ χρειάζεται ρητή άδεια
+                    DeviceOrientationEvent.requestPermission()
+                        .then(permissionState => {
+                            console.log('Permission state:', permissionState);
+                            if (permissionState === 'granted') {
+                                window.addEventListener('deviceorientation', handleOrientation, true);
+                                window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+                                activateUI();
+                            } else {
+                                alert('Δεν επιτράπηκε η πυξίδα. Πήγαινε στις Ρυθμίσεις > Safari > Γυροσκόπιο & Κίνηση για να το αλλάξεις.');
+                            }
+                        })
+                        .catch(err => {
+                            console.error('Permission error:', err);
+                            alert('Σφάλμα κατά την αίτηση άδειας: ' + err.message);
+                        });
+                } else {
+                    // Άλλες συσκευές ή παλαιότερο iOS
+                    window.addEventListener('deviceorientation', handleOrientation, true);
+                    window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+                    activateUI();
+                }
             }
-
-            // Μετατροπή γεωγραφικού (0-360, 0=Β) → PVGIS (-180/+180, 0=Ν)
-            function geoPvgis(geo) {
-                let pvgis = geo - 180;
-                if (pvgis > 180) pvgis -= 360;
-                if (pvgis < -180) pvgis += 360;
-                return pvgis;
+            
+            function activateUI() {
+                compassActive = true;
+                enableCompassBtn.classList.add('hidden');
+                compassStatus.classList.add('active');
+                // Ενεργοποιούμε την αφή στην εικόνα
+                video.addEventListener('touchstart', onVideoTouch);
+                video.addEventListener('click', onVideoClick);
             }
             
             // ---------- Αφή στην εικόνα ----------
@@ -158,7 +160,6 @@
                 const touch = e.touches[0];
                 if (!touch) return;
                 const elevation = getElevationFromTouch(touch.clientY);
-                // Αποθήκευση σε γεωγραφικό (0-360) — μετατροπή γίνεται στην εξαγωγή
                 points.push({ azimuth: currentHeading, elevation });
                 currentElevation = elevation;
                 elSpan.textContent = elevation.toFixed(1);
@@ -180,10 +181,7 @@
                     pointListDiv.textContent = 'Σημεία: (κανένα)';
                 } else {
                     const last = points.slice(-5);
-                    // Εμφάνιση ως PVGIS
-                    pointListDiv.innerHTML = 'Σημεία: ' + last.map(p =>
-                        `${geoPvgis(p.azimuth).toFixed(1)}°/${p.elevation.toFixed(1)}°`
-                    ).join(', ');
+                    pointListDiv.innerHTML = 'Σημεία: ' + last.map(p => `${p.azimuth.toFixed(1)}°/${p.elevation.toFixed(1)}°`).join(', ');
                     if (points.length > 5) pointListDiv.innerHTML += ' …';
                 }
             }
@@ -203,49 +201,39 @@
             // ---------- Εξαγωγή ----------
             function exportHorizonFile() {
                 if (points.length < 2) {
-                    alert('Χρειαζονται τουλάχιστον 2 σημεία για παρεμβολή.');
+                    alert('Χρειάζονται τουλάχιστον 2 σημεία για παρεμβολή.');
                     return;
                 }
                 const backHorizon = parseFloat(backHorizonInput.value) || 90;
-
-                // Μετατροπή σε PVGIS (-180..+180) για παρεμβολή
-                const pvgisPoints = points.map(p => ({
-                    azimuth: geoPvgis(p.azimuth),
-                    elevation: p.elevation
-                })).sort((a, b) => a.azimuth - b.azimuth);
-
-                // Παρεμβολή σε -180..+179 (360 τιμές) με PVGIS αζιμούθια
                 let horizon = new Array(360).fill(backHorizon);
-                const minAz = pvgisPoints[0].azimuth;
-                const maxAz = pvgisPoints[pvgisPoints.length - 1].azimuth;
-
-                for (let i = 0; i < 360; i++) {
-                    const deg = i - 180; // -180 έως +179
-                    if (deg >= minAz && deg <= maxAz) {
-                        let prev = pvgisPoints[0];
-                        let next = pvgisPoints[pvgisPoints.length - 1];
-                        for (let j = 0; j < pvgisPoints.length - 1; j++) {
-                            if (pvgisPoints[j].azimuth <= deg && pvgisPoints[j+1].azimuth >= deg) {
-                                prev = pvgisPoints[j];
-                                next = pvgisPoints[j+1];
+                const sorted = [...points].sort((a, b) => a.azimuth - b.azimuth);
+                const minAz = sorted[0].azimuth;
+                const maxAz = sorted[sorted.length-1].azimuth;
+                
+                for (let deg = 0; deg < 360; deg++) {
+                    const azi = deg;
+                    if (azi >= minAz && azi <= maxAz) {
+                        let prev = sorted[0];
+                        let next = sorted[sorted.length-1];
+                        for (let i = 0; i < sorted.length-1; i++) {
+                            if (sorted[i].azimuth <= azi && sorted[i+1].azimuth >= azi) {
+                                prev = sorted[i];
+                                next = sorted[i+1];
                                 break;
                             }
                         }
                         const range = next.azimuth - prev.azimuth;
-                        const t = range === 0 ? 0 : (deg - prev.azimuth) / range;
-                        horizon[i] = prev.elevation + t * (next.elevation - prev.elevation);
+                        let t = range === 0 ? 0 : (azi - prev.azimuth) / range;
+                        horizon[deg] = prev.elevation + t * (next.elevation - prev.elevation);
                     }
                 }
-
-                // Εξαγωγή: μία τιμή ανά γραμμή, από -180° έως +179°
+                
                 let content = '# Horizon file for PVGIS\n';
-                content += '# Generated by PVGIS Horizon Capture\n';
-                content += '# Format: one elevation value per line, azimuth -180 to +179 (PVGIS, 0=South)\n';
+                content += '# Generated by Horizon PWA\n';
                 content += `# Back horizon: ${backHorizon} deg\n`;
                 for (let i = 0; i < 360; i++) {
                     content += horizon[i].toFixed(2) + '\n';
                 }
-
                 const blob = new Blob([content], { type: 'text/plain' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -258,8 +246,13 @@
             }
             
             exportBtn.addEventListener('click', exportHorizonFile);
-            enableCompassBtn.addEventListener('click', enableCompass);
-            enableCompassBtn.addEventListener('pointerdown', enableCompass);
+            
+            // ---------- Εκκίνηση ----------
+            enableCompassBtn.addEventListener('click', requestPermissionAndListen);
+            enableCompassBtn.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                requestPermissionAndListen();
+            });
             startCamera();
         })();
     </script>
