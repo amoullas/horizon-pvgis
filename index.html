@@ -9,143 +9,24 @@
     <meta name="theme-color" content="#000000">
     <link rel="manifest" href="data:application/json, {}">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        html, body {
-            height: 100%;
-            overflow: hidden;
-            background: black;
-            font-family: -apple-system, sans-serif;
-            color: white;
-        }
-        #app {
-            position: relative;
-            width: 100%;
-            height: 100%;
-        }
-        video, canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            z-index: 0;
-        }
-        #overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            z-index: 10;
-            /* pointer-events: none αφαιρέθηκε – το διαχειριζόμαστε ανά στοιχείο */
-        }
-        /* Σταυρόνημα και γραμμή ορίζοντα δεν πρέπει να δέχονται αφή */
-        #horizon-line {
-            position: absolute;
-            top: 50%;
-            left: 0;
-            width: 100%;
-            height: 1px;
-            background: rgba(0, 255, 0, 0.4);
-            pointer-events: none;
-            z-index: 5;
-        }
-        #crosshair {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 60px;
-            height: 60px;
-            border: 2px dashed rgba(0, 255, 0, 0.6);
-            border-radius: 50%;
-            pointer-events: none;
-            z-index: 5;
-        }
-        #compass-status {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            width: 14px;
-            height: 14px;
-            border-radius: 50%;
-            background: red;
-            z-index: 20;
-        }
-        #compass-status.active {
-            background: #00ff00;
-        }
-        #info {
-            background: rgba(0, 0, 0, 0.7);
-            padding: 10px;
-            font-size: 20px;
-            text-align: center;
-            font-weight: 500;
-            z-index: 10;
-        }
-        #controls {
-            background: rgba(0, 0, 0, 0.7);
-            padding: 16px 10px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            justify-content: center;
-            align-items: center;
-            z-index: 10;
-        }
-        button {
-            padding: 14px 20px;
-            font-size: 18px;
-            border: none;
-            border-radius: 12px;
-            background: #007aff;
-            color: white;
-            font-weight: 600;
-            cursor: pointer;
-            min-height: 48px;  /* Apple συνιστά τουλάχιστον 44pt */
-            min-width: 80px;
-            transition: opacity 0.1s;
-            z-index: 10;
-        }
-        button:active {
-            opacity: 0.7;
-        }
-        #point-list {
-            max-height: 80px;
-            overflow-y: auto;
-            background: rgba(0, 0, 0, 0.6);
-            margin: 5px 5px 0 5px;
-            padding: 8px;
-            font-size: 14px;
-            z-index: 10;
-        }
-        .settings {
-            display: flex;
-            gap: 6px;
-            align-items: center;
-            font-size: 16px;
-            background: rgba(255,255,255,0.1);
-            padding: 6px 10px;
-            border-radius: 8px;
-        }
-        input[type=number] {
-            width: 65px;
-            padding: 6px;
-            font-size: 16px;
-            border-radius: 6px;
-            border: none;
-        }
-        .hidden {
-            display: none;
-        }
+        * { margin:0; padding:0; box-sizing: border-box; }
+        html, body { height: 100%; overflow: hidden; background: black; font-family: -apple-system, sans-serif; color: white; }
+        #app { position: relative; width: 100%; height: 100%; }
+        video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; }
+        #overlay { position: absolute; top:0; left:0; width:100%; height:100%; display: flex; flex-direction: column; justify-content: space-between; z-index: 10; pointer-events: none; }
+        #crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 60px; height: 60px; border: 2px dashed rgba(0,255,0,0.6); border-radius: 50%; pointer-events: none; z-index: 5; }
+        #horizon-line { position: absolute; top: 50%; left: 0; width: 100%; height: 1px; background: rgba(0,255,0,0.4); pointer-events: none; z-index: 5; }
+        #compass-status { position: absolute; top: 10px; right: 10px; width: 14px; height: 14px; border-radius: 50%; background: red; z-index: 20; }
+        #compass-status.active { background: #00ff00; }
+        #info { background: rgba(0,0,0,0.7); padding: 10px; font-size: 20px; text-align: center; font-weight: 500; z-index: 10; pointer-events: none; }
+        .controls-container { pointer-events: auto; } /* ενεργοποιεί τα κουμπιά */
+        #point-list { max-height: 80px; overflow-y: auto; background: rgba(0,0,0,0.6); margin: 5px 5px 0 5px; padding: 8px; font-size: 14px; z-index: 10; pointer-events: auto; }
+        #controls { background: rgba(0,0,0,0.7); padding: 16px 10px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; align-items: center; z-index: 10; pointer-events: auto; }
+        button { padding: 14px 20px; font-size: 18px; border: none; border-radius: 12px; background: #007aff; color: white; font-weight: 600; cursor: pointer; min-height: 48px; min-width: 80px; transition: opacity 0.1s; z-index: 10; }
+        button:active { opacity: 0.7; }
+        .settings { display: flex; gap: 6px; align-items: center; font-size: 16px; background: rgba(255,255,255,0.1); padding: 6px 10px; border-radius: 8px; }
+        input[type=number] { width: 65px; padding: 6px; font-size: 16px; border-radius: 6px; border: none; }
+        .hidden { display: none; }
     </style>
 </head>
 <body>
@@ -156,7 +37,7 @@
         <div id="compass-status"></div>
         <div id="overlay">
             <div id="info">🧭 Azimuth: <span id="az-value">---</span>° | 📐 Elevation: <span id="el-value">---</span>°</div>
-            <div>
+            <div class="controls-container">
                 <div id="point-list">Σημεία: (κανένα)</div>
                 <div id="controls">
                     <button id="enable-compass-btn">🧭 Ενεργοποίηση Πυξίδας</button>
@@ -165,11 +46,9 @@
                     <button id="export-btn">💾 Δημιουργία αρχείου</button>
                     <div class="settings">
                         <span>VFOV:</span>
-                        <input type="number" id="vfov-input" value="72" step="1" min="30" max="90">
-                        <span>°</span>
+                        <input type="number" id="vfov-input" value="72" step="1" min="30" max="90"><span>°</span>
                         <span>Back:</span>
-                        <input type="number" id="back-horizon-input" value="90" step="1" min="0" max="90">
-                        <span>°</span>
+                        <input type="number" id="back-horizon-input" value="90" step="1" min="0" max="90"><span>°</span>
                     </div>
                 </div>
             </div>
@@ -188,6 +67,7 @@
             const vfovInput = document.getElementById('vfov-input');
             const backHorizonInput = document.getElementById('back-horizon-input');
             const compassStatus = document.getElementById('compass-status');
+            const appDiv = document.getElementById('app');
             
             let points = [];
             let currentHeading = null;
@@ -222,7 +102,6 @@
             }
             
             function requestCompassPermission() {
-                // Για iOS 13+ απαιτείται ρητή άδεια μέσω χειρονομίας
                 if (typeof DeviceOrientationEvent.requestPermission === 'function') {
                     DeviceOrientationEvent.requestPermission()
                         .then(permissionState => {
@@ -231,14 +110,11 @@
                                 window.addEventListener('deviceorientationabsolute', handleOrientation, true);
                                 enableCompassFeatures();
                             } else {
-                                alert('Η πυξίδα δεν επιτράπηκε. Μπορείς να αλλάξεις την άδεια από Ρυθμίσεις > Safari > Γυροσκόπιο & Κίνηση.');
+                                alert('Η πυξίδα δεν επιτράπηκε. Ενεργοποίησε την από Ρυθμίσεις > Safari > Γυροσκόπιο & Κίνηση.');
                             }
                         })
-                        .catch(err => {
-                            alert('Σφάλμα άδειας πυξίδας: ' + err.message);
-                        });
+                        .catch(err => alert('Σφάλμα άδειας πυξίδας: ' + err.message));
                 } else {
-                    // Άλλες συσκευές – απλά ενεργοποίηση
                     window.addEventListener('deviceorientation', handleOrientation, true);
                     window.addEventListener('deviceorientationabsolute', handleOrientation, true);
                     enableCompassFeatures();
@@ -249,17 +125,14 @@
                 compassActive = true;
                 enableCompassBtn.classList.add('hidden');
                 compassStatus.classList.add('active');
-                // Τώρα επιτρέπουμε την καταγραφή σημείων με άγγιγμα
-                video.addEventListener('touchstart', onVideoTouch);
-                video.addEventListener('click', onVideoClick);
             }
             
-            // ---------- Αφή στην εικόνα ----------
+            // ---------- Υπολογισμός ανύψωσης ----------
             function getElevationFromTouch(clientY) {
                 const rect = video.getBoundingClientRect();
                 const y = clientY - rect.top;
                 const centerY = rect.height / 2;
-                const delta = centerY - y;
+                const delta = centerY - y; // θετικό πάνω από το κέντρο
                 const vfov = parseFloat(vfovInput.value) || 72;
                 const maxAngle = vfov / 2;
                 let elevation = (delta / centerY) * maxAngle;
@@ -267,24 +140,44 @@
                 return elevation;
             }
             
-            function onVideoTouch(e) {
-                e.preventDefault();
+            // ---------- Χειρισμός αγγίγματος ----------
+            function onScreenTap(e) {
+                // Ενεργό μόνο αν η πυξίδα είναι ενεργή
                 if (!compassActive || currentHeading === null) return;
-                const touch = e.touches[0];
-                if (!touch) return;
-                const elevation = getElevationFromTouch(touch.clientY);
+                
+                let clientY;
+                if (e.touches && e.touches.length > 0) {
+                    clientY = e.touches[0].clientY;
+                } else if (e.clientY !== undefined) {
+                    clientY = e.clientY;
+                } else {
+                    return;
+                }
+                
+                const elevation = getElevationFromTouch(clientY);
                 points.push({ azimuth: currentHeading, elevation });
                 elSpan.textContent = elevation.toFixed(1);
                 updatePointList();
+                
+                // Οπτική ανάδραση
+                const line = document.getElementById('horizon-line');
+                line.style.background = 'rgba(0,255,0,0.9)';
+                setTimeout(() => { line.style.background = 'rgba(0,255,0,0.4)'; }, 200);
             }
             
-            function onVideoClick(e) {
-                if (!compassActive || currentHeading === null) return;
-                const elevation = getElevationFromTouch(e.clientY);
-                points.push({ azimuth: currentHeading, elevation });
-                elSpan.textContent = elevation.toFixed(1);
-                updatePointList();
-            }
+            // Συνδέουμε τα events στο appDiv, αλλά αγνοούμε αν ο στόχος είναι κουμπί/input
+            appDiv.addEventListener('touchstart', (e) => {
+                const target = e.target;
+                if (target.tagName === 'BUTTON' || target.tagName === 'INPUT') return;
+                e.preventDefault();
+                onScreenTap(e);
+            });
+            
+            appDiv.addEventListener('click', (e) => {
+                const target = e.target;
+                if (target.tagName === 'BUTTON' || target.tagName === 'INPUT') return;
+                onScreenTap(e);
+            });
             
             // ---------- Διαχείριση σημείων ----------
             function updatePointList() {
