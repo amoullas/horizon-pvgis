@@ -7,7 +7,6 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#000000">
-    <link rel="manifest" href="data:application/json, {}">
     <style>
         * { margin:0; padding:0; box-sizing: border-box; }
         html, body { height: 100%; overflow: hidden; background: black; font-family: -apple-system, sans-serif; color: white; }
@@ -90,7 +89,6 @@
             function enableCompass() {
                 if (typeof DeviceOrientationEvent !== 'undefined') {
                     if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                        // iOS 13+
                         DeviceOrientationEvent.requestPermission()
                         .then(response => {
                             if (response === 'granted') {
@@ -98,7 +96,6 @@
                                 compassActive = true;
                                 enableCompassBtn.classList.add('hidden');
                                 compassStatus.classList.add('active');
-                                // Τώρα ενεργοποιούμε την αφή στην εικόνα
                                 video.addEventListener('touchstart', onVideoTouch);
                                 video.addEventListener('click', onVideoClick);
                             } else {
@@ -107,7 +104,6 @@
                         })
                         .catch(console.error);
                     } else {
-                        // Άλλες συσκευές
                         window.addEventListener('deviceorientation', handleOrientation, true);
                         compassActive = true;
                         enableCompassBtn.classList.add('hidden');
@@ -131,7 +127,16 @@
                     return;
                 }
                 currentHeading = heading;
-                azSpan.textContent = currentHeading.toFixed(1);
+                // Εμφάνιση ως PVGIS στο HUD
+                azSpan.textContent = geoPvgis(heading).toFixed(1);
+            }
+
+            // Μετατροπή γεωγραφικού (0-360, 0=Β) → PVGIS (-180/+180, 0=Ν)
+            function geoPvgis(geo) {
+                let pvgis = geo - 180;
+                if (pvgis > 180) pvgis -= 360;
+                if (pvgis < -180) pvgis += 360;
+                return pvgis;
             }
             
             // ---------- Αφή στην εικόνα ----------
@@ -153,6 +158,7 @@
                 const touch = e.touches[0];
                 if (!touch) return;
                 const elevation = getElevationFromTouch(touch.clientY);
+                // Αποθήκευση σε γεωγραφικό (0-360) — μετατροπή γίνεται στην εξαγωγή
                 points.push({ azimuth: currentHeading, elevation });
                 currentElevation = elevation;
                 elSpan.textContent = elevation.toFixed(1);
@@ -174,7 +180,10 @@
                     pointListDiv.textContent = 'Σημεία: (κανένα)';
                 } else {
                     const last = points.slice(-5);
-                    pointListDiv.innerHTML = 'Σημεία: ' + last.map(p => `${p.azimuth.toFixed(1)}°/${p.elevation.toFixed(1)}°`).join(', ');
+                    // Εμφάνιση ως PVGIS
+                    pointListDiv.innerHTML = 'Σημεία: ' + last.map(p =>
+                        `${geoPvgis(p.azimuth).toFixed(1)}°/${p.elevation.toFixed(1)}°`
+                    ).join(', ');
                     if (points.length > 5) pointListDiv.innerHTML += ' …';
                 }
             }
@@ -198,35 +207,45 @@
                     return;
                 }
                 const backHorizon = parseFloat(backHorizonInput.value) || 90;
+
+                // Μετατροπή σε PVGIS (-180..+180) για παρεμβολή
+                const pvgisPoints = points.map(p => ({
+                    azimuth: geoPvgis(p.azimuth),
+                    elevation: p.elevation
+                })).sort((a, b) => a.azimuth - b.azimuth);
+
+                // Παρεμβολή σε -180..+179 (360 τιμές) με PVGIS αζιμούθια
                 let horizon = new Array(360).fill(backHorizon);
-                const sorted = [...points].sort((a, b) => a.azimuth - b.azimuth);
-                const minAz = sorted[0].azimuth;
-                const maxAz = sorted[sorted.length-1].azimuth;
-                
-                for (let deg = 0; deg < 360; deg++) {
-                    const azi = deg;
-                    if (azi >= minAz && azi <= maxAz) {
-                        let prev = sorted[0];
-                        let next = sorted[sorted.length-1];
-                        for (let i = 0; i < sorted.length-1; i++) {
-                            if (sorted[i].azimuth <= azi && sorted[i+1].azimuth >= azi) {
-                                prev = sorted[i];
-                                next = sorted[i+1];
+                const minAz = pvgisPoints[0].azimuth;
+                const maxAz = pvgisPoints[pvgisPoints.length - 1].azimuth;
+
+                for (let i = 0; i < 360; i++) {
+                    const deg = i - 180; // -180 έως +179
+                    if (deg >= minAz && deg <= maxAz) {
+                        let prev = pvgisPoints[0];
+                        let next = pvgisPoints[pvgisPoints.length - 1];
+                        for (let j = 0; j < pvgisPoints.length - 1; j++) {
+                            if (pvgisPoints[j].azimuth <= deg && pvgisPoints[j+1].azimuth >= deg) {
+                                prev = pvgisPoints[j];
+                                next = pvgisPoints[j+1];
                                 break;
                             }
                         }
                         const range = next.azimuth - prev.azimuth;
-                        let t = range === 0 ? 0 : (azi - prev.azimuth) / range;
-                        horizon[deg] = prev.elevation + t * (next.elevation - prev.elevation);
+                        const t = range === 0 ? 0 : (deg - prev.azimuth) / range;
+                        horizon[i] = prev.elevation + t * (next.elevation - prev.elevation);
                     }
                 }
-                
+
+                // Εξαγωγή: μία τιμή ανά γραμμή, από -180° έως +179°
                 let content = '# Horizon file for PVGIS\n';
-                content += '# Generated by Horizon PWA\n';
+                content += '# Generated by PVGIS Horizon Capture\n';
+                content += '# Format: one elevation value per line, azimuth -180 to +179 (PVGIS, 0=South)\n';
                 content += `# Back horizon: ${backHorizon} deg\n`;
                 for (let i = 0; i < 360; i++) {
                     content += horizon[i].toFixed(2) + '\n';
                 }
+
                 const blob = new Blob([content], { type: 'text/plain' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -239,16 +258,9 @@
             }
             
             exportBtn.addEventListener('click', exportHorizonFile);
-            
-            // ---------- Εκκίνηση ----------
             enableCompassBtn.addEventListener('click', enableCompass);
-            // Εναλλακτικά, για γρηγορότερη απόκριση σε κινητά:
             enableCompassBtn.addEventListener('pointerdown', enableCompass);
             startCamera();
-            
-            window.addEventListener('resize', () => {
-                // Ανανέωση διαστάσεων αν χρειαστεί
-            });
         })();
     </script>
 </body>
