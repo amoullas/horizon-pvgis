@@ -1,345 +1,360 @@
 <!DOCTYPE html>
 <html lang="el">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PVGIS Horizon Capture</title>
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#000000">
-    <link rel="manifest" href="data:application/json, {}">
-    <style>
-        * { margin:0; padding:0; box-sizing: border-box; }
-        html, body { height: 100%; overflow: hidden; background: black; font-family: -apple-system, sans-serif; color: white; }
-        #app { position: relative; width: 100%; height: 100%; }
-        video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; }
-        #horizon-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 5; pointer-events: none; }
-        #overlay { position: absolute; top:0; left:0; width:100%; height:100%; display: flex; flex-direction: column; justify-content: space-between; z-index: 10; pointer-events: none; }
-        #compass-status { position: absolute; top: 10px; right: 10px; width: 14px; height: 14px; border-radius: 50%; background: red; z-index: 20; }
-        #compass-status.active { background: #00ff00; }
-        #info { background: rgba(0,0,0,0.7); padding: 10px; font-size: 18px; text-align: center; font-weight: 500; z-index: 10; pointer-events: none; }
-        .controls-container { pointer-events: auto; }
-        #point-list { max-height: 80px; overflow-y: auto; background: rgba(0,0,0,0.6); margin: 5px 5px 0 5px; padding: 8px; font-size: 14px; z-index: 10; pointer-events: auto; }
-        #controls { background: rgba(0,0,0,0.7); padding: 16px 10px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; align-items: center; z-index: 10; pointer-events: auto; }
-        button { padding: 14px 20px; font-size: 18px; border: none; border-radius: 12px; background: #007aff; color: white; font-weight: 600; cursor: pointer; min-height: 48px; min-width: 80px; transition: opacity 0.1s; z-index: 10; }
-        button:active { opacity: 0.7; }
-        .settings { display: flex; gap: 6px; align-items: center; font-size: 16px; background: rgba(255,255,255,0.1); padding: 6px 10px; border-radius: 8px; }
-        input[type=number] { width: 65px; padding: 6px; font-size: 16px; border-radius: 6px; border: none; }
-        .hidden { display: none; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Καταγραφέας Ορίζοντα για PVGIS</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #000;
+      color: white;
+      touch-action: manipulation;
+    }
+    #videoContainer {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+    }
+    video {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+    }
+    #overlay {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+    }
+    #crosshair {
+      position: absolute;
+      top: 50%; left: 50%;
+      width: 60px; height: 60px;
+      margin: -30px 0 0 -30px;
+      border: 2px solid cyan;
+      border-radius: 50%;
+      box-shadow: 0 0 10px cyan;
+    }
+    #hud {
+      position: absolute;
+      bottom: 100px;
+      left: 20px;
+      background: rgba(0,0,0,0.7);
+      padding: 10px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    #controls {
+      position: absolute;
+      bottom: 20px;
+      left: 0; right: 0;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 0 10px;
+      pointer-events: auto;
+    }
+    button {
+      background: rgba(255,255,255,0.2);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.5);
+      color: white;
+      padding: 14px 20px;
+      border-radius: 30px;
+      font-size: 16px;
+      font-weight: 600;
+      pointer-events: auto;
+    }
+    button:active {
+      background: rgba(255,255,255,0.5);
+    }
+    #recordList {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: rgba(0,0,0,0.7);
+      padding: 8px;
+      border-radius: 10px;
+      font-size: 12px;
+      max-height: 150px;
+      overflow-y: auto;
+      display: none;
+    }
+    #chartCanvas {
+      position: absolute;
+      bottom: 160px;
+      right: 10px;
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background: rgba(0,0,0,0.5);
+      border: 1px solid white;
+      display: none;
+    }
+  </style>
 </head>
 <body>
-    <div id="app">
-        <video id="video" autoplay playsinline></video>
-        <canvas id="horizon-canvas"></canvas>
-        <div id="compass-status"></div>
-        <div id="overlay">
-            <div id="info">🧭 Azimuth: <span id="az-value">---</span>° | Pitch: <span id="pitch-value">---</span>° | Roll: <span id="roll-value">---</span>° | 📐 Elevation: <span id="el-value">---</span>°</div>
-            <div class="controls-container">
-                <div id="point-list">Σημεία: (κανένα)</div>
-                <div id="controls">
-                    <button id="enable-compass-btn">🧭 Ενεργοποίηση Πυξίδας</button>
-                    <button id="undo-btn">↩️ Ακύρωση</button>
-                    <button id="clear-btn">🗑️ Καθαρισμός</button>
-                    <button id="export-btn">💾 Αποθήκευση</button>
-                    <button id="share-btn">📤 Αποστολή</button>
-                    <div class="settings">
-                        <span>VFOV:</span>
-                        <input type="number" id="vfov-input" value="52" step="1" min="30" max="90"><span>°</span>
-                        <span>Back:</span>
-                        <input type="number" id="back-horizon-input" value="90" step="1" min="0" max="90"><span>°</span>
-                    </div>
-                </div>
-            </div>
-        </div>
+  <div id="videoContainer">
+    <video id="video" autoplay playsinline muted></video>
+    <div id="overlay">
+      <div id="crosshair"></div>
     </div>
+    <div id="hud">
+      <div id="azimuthDisplay">Αζιμούθιο: --</div>
+      <div id="elevationDisplay">Ύψος: --</div>
+    </div>
+    <div id="recordList"></div>
+    <canvas id="chartCanvas" width="120" height="120"></canvas>
+    <div id="controls">
+      <button id="startBtn">▶️ Έναρξη</button>
+      <button id="recordBtn" disabled>📍 Καταγραφή Σημείου</button>
+      <button id="generateBtn" disabled>📁 Δημιουργία Horizon File</button>
+    </div>
+  </div>
 
-    <script>
-        (function() {
-            const video = document.getElementById('video');
-            const canvas = document.getElementById('horizon-canvas');
-            const ctx = canvas.getContext('2d');
-            const azSpan = document.getElementById('az-value');
-            const pitchSpan = document.getElementById('pitch-value');
-            const rollSpan = document.getElementById('roll-value');
-            const elSpan = document.getElementById('el-value');
-            const pointListDiv = document.getElementById('point-list');
-            const enableCompassBtn = document.getElementById('enable-compass-btn');
-            const undoBtn = document.getElementById('undo-btn');
-            const clearBtn = document.getElementById('clear-btn');
-            const exportBtn = document.getElementById('export-btn');
-            const shareBtn = document.getElementById('share-btn');
-            const vfovInput = document.getElementById('vfov-input');
-            const backHorizonInput = document.getElementById('back-horizon-input');
-            const compassStatus = document.getElementById('compass-status');
-            const appDiv = document.getElementById('app');
-            
-            let points = [];
-            let currentHeading = null;
-            let currentPitch = 0; // κλίση εμπρός/πίσω (beta)
-            let currentRoll = 0;  // κλίση αριστερά/δεξιά (gamma)
-            let compassActive = false;
-            
-            // ---------- Κάμερα ----------
-            async function startCamera() {
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({
-                        video: { facingMode: 'environment' },
-                        audio: false
-                    });
-                    video.srcObject = stream;
-                } catch (err) {
-                    alert('Δεν ήταν δυνατή η πρόσβαση στην κάμερα: ' + err.message);
-                }
-            }
-            
-            // ---------- Αισθητήρες ----------
-            function handleOrientation(event) {
-                // Αζιμούθιο (heading)
-                let heading = null;
-                if (event.webkitCompassHeading !== undefined) {
-                    heading = event.webkitCompassHeading;
-                } else if (event.absolute && event.alpha !== null) {
-                    heading = 360 - event.alpha;
-                    if (heading < 0) heading += 360;
-                }
-                if (heading !== null) {
-                    currentHeading = heading;
-                    azSpan.textContent = currentHeading.toFixed(1);
-                }
+  <script>
+    (function() {
+      const video = document.getElementById('video');
+      const azimuthEl = document.getElementById('azimuthDisplay');
+      const elevationEl = document.getElementById('elevationDisplay');
+      const recordListEl = document.getElementById('recordList');
+      const startBtn = document.getElementById('startBtn');
+      const recordBtn = document.getElementById('recordBtn');
+      const generateBtn = document.getElementById('generateBtn');
+      const chartCanvas = document.getElementById('chartCanvas');
+      const ctx = chartCanvas.getContext('2d');
 
-                // Pitch (beta) - κλίση εμπρός/πίσω
-                if (event.beta !== undefined && event.beta !== null) {
-                    currentPitch = event.beta;
-                    if (currentPitch > 90) currentPitch = 180 - currentPitch;
-                    if (currentPitch < -90) currentPitch = -180 - currentPitch;
-                }
+      let currentAzimuth = null, currentElevation = null;
+      let isListening = false;
+      let recordedPoints = []; // {azimuth, elevation}
 
-                // Roll (gamma) - κλίση αριστερά/δεξιά
-                if (event.gamma !== undefined && event.gamma !== null) {
-                    currentRoll = event.gamma; // -90 έως 90
-                }
+      // ---- request camera ----
+      async function startCamera() {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: 'environment', // πίσω κάμερα (Wide)
+              width: { ideal: 1920 },
+              height: { ideal: 1080 }
+            },
+            audio: false
+          });
+          video.srcObject = stream;
+          return true;
+        } catch (err) {
+          alert('Δεν μπορεί να ανοίξει η κάμερα: ' + err.message);
+          return false;
+        }
+      }
 
-                pitchSpan.textContent = currentPitch.toFixed(1);
-                rollSpan.textContent = currentRoll.toFixed(1);
-                
-                drawArtificialHorizon();
+      // ---- request DeviceOrientation with permission (iOS 13+) ----
+      async function requestSensors() {
+        if (typeof DeviceOrientationEvent !== 'undefined' &&
+            typeof DeviceOrientationEvent.requestPermission === 'function') {
+          try {
+            const permission = await DeviceOrientationEvent.requestPermission();
+            if (permission !== 'granted') {
+              alert('Η πρόσβαση στους αισθητήρες απορρίφθηκε.');
+              return false;
             }
-            
-            function requestCompassPermission() {
-                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                    DeviceOrientationEvent.requestPermission()
-                        .then(permissionState => {
-                            if (permissionState === 'granted') {
-                                window.addEventListener('deviceorientation', handleOrientation, true);
-                                enableCompassFeatures();
-                            } else {
-                                alert('Η πυξίδα δεν επιτράπηκε. Ενεργοποίησε την από Ρυθμίσεις > Safari > Γυροσκόπιο & Κίνηση.');
-                            }
-                        })
-                        .catch(err => alert('Σφάλμα άδειας πυξίδας: ' + err.message));
-                } else {
-                    window.addEventListener('deviceorientation', handleOrientation, true);
-                    enableCompassFeatures();
-                }
+          } catch (err) {
+            alert('Σφάλμα άδειας αισθητήρων: ' + err.message);
+            return false;
+          }
+        }
+        return true;
+      }
+
+      // ---- αλγόριθμος προσανατολισμού κάμερας ----
+      function toRad(deg) { return deg * Math.PI / 180; }
+
+      function computeCameraDirection(alpha, beta, gamma) {
+        const a = toRad(alpha);
+        const b = toRad(beta);
+        const c = toRad(gamma);
+
+        // Rz(alpha)
+        const cosA = Math.cos(a), sinA = Math.sin(a);
+        // Rx(beta)
+        const cosB = Math.cos(b), sinB = Math.sin(b);
+        // Ry(gamma)
+        const cosC = Math.cos(c), sinC = Math.sin(c);
+
+        // R = Rz * Rx * Ry
+        const m11 = cosA*cosC - sinA*sinB*sinC;
+        const m12 = -sinA*cosB;
+        const m13 = cosA*sinC + sinA*sinB*cosC;
+        const m21 = sinA*cosC + cosA*sinB*sinC;
+        const m22 = cosA*cosB;
+        const m23 = sinA*sinC - cosA*sinB*cosC;
+        const m31 = -cosB*sinC;
+        const m32 = sinB;
+        const m33 = cosB*cosC;
+
+        // κάμερα: v_D = (0,0,-1)
+        const vx = -m13; // R * [0,0,-1] = - 3η στήλη
+        const vy = -m23;
+        const vz = -m33;
+
+        const len = Math.sqrt(vx*vx + vy*vy + vz*vz);
+        const nx = vx/len, ny = vy/len, nz = vz/len;
+
+        let azimuth = Math.atan2(nx, ny) * 180/Math.PI; // nx=East, ny=North
+        if (azimuth < 0) azimuth += 360;
+        const elevation = Math.asin(nz) * 180/Math.PI; // θετικό = πάνω από ορίζοντα
+        return { azimuth, elevation };
+      }
+
+      function handleOrientation(event) {
+        if (!isListening) return;
+        // Χρειαζόμαστε απόλυτες τιμές
+        if (event.absolute !== true) {
+          azimuthEl.textContent = 'Αζιμούθιο: (χωρίς απόλυτη πυξίδα)';
+          return;
+        }
+        const alpha = event.alpha; // 0-360, κεφαλή της συσκευής
+        const beta = event.beta;   // -180 έως 180
+        const gamma = event.gamma; // -90 έως 90
+        if (alpha === null || beta === null || gamma === null) return;
+
+        const { azimuth, elevation } = computeCameraDirection(alpha, beta, gamma);
+        currentAzimuth = azimuth;
+        currentElevation = elevation;
+        azimuthEl.textContent = `Αζιμούθιο: ${azimuth.toFixed(1)}°`;
+        elevationEl.textContent = `Ύψος: ${elevation.toFixed(1)}°`;
+      }
+
+      window.addEventListener('deviceorientation', handleOrientation, true);
+
+      // ---- καταγραφή σημείου ----
+      function addRecordedPoint() {
+        if (currentAzimuth === null || currentElevation === null) {
+          alert('Περιμένετε να σταθεροποιηθεί ο προσανατολισμός...');
+          return;
+        }
+        recordedPoints.push({
+          azimuth: currentAzimuth,
+          elevation: currentElevation
+        });
+        updateRecordList();
+        updateChart();
+        generateBtn.disabled = recordedPoints.length < 2;
+      }
+
+      function updateRecordList() {
+        if (recordedPoints.length === 0) {
+          recordListEl.style.display = 'none';
+          return;
+        }
+        recordListEl.style.display = 'block';
+        recordListEl.innerHTML = '<strong>Σημεία:</strong><br>' +
+          recordedPoints.map((p, i) =>
+            `${i+1}: ${p.azimuth.toFixed(0)}° / ${p.elevation.toFixed(1)}°`
+          ).join('<br>');
+      }
+
+      // ---- πολική απεικόνιση ----
+      function updateChart() {
+        if (recordedPoints.length < 2) {
+          chartCanvas.style.display = 'none';
+          return;
+        }
+        chartCanvas.style.display = 'block';
+        const w = chartCanvas.width, h = chartCanvas.height;
+        ctx.clearRect(0, 0, w, h);
+        ctx.strokeStyle = 'cyan';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        const cx = w/2, cy = h/2, r = 50;
+        // ταξινόμηση κατά αζιμούθιο και γραμμική παρεμβολή για κύκλο
+        const pts = [...recordedPoints].sort((a,b) => a.azimuth - b.azimuth);
+        // προσθήκη wrap
+        const wrapped = pts.concat([{azimuth: pts[0].azimuth + 360, elevation: pts[0].elevation}]);
+        for (let az = 0; az <= 360; az += 5) {
+          // βρες σημείο παρεμβολής
+          let p1, p2;
+          for (let i = 0; i < wrapped.length - 1; i++) {
+            if (az >= wrapped[i].azimuth && az <= wrapped[i+1].azimuth) {
+              p1 = wrapped[i]; p2 = wrapped[i+1]; break;
             }
-            
-            function enableCompassFeatures() {
-                compassActive = true;
-                enableCompassBtn.classList.add('hidden');
-                compassStatus.classList.add('active');
-                drawArtificialHorizon(); // να εμφανιστεί αμέσως η γραμμή
+          }
+          if (!p1 || !p2) continue;
+          const t = (az - p1.azimuth) / (p2.azimuth - p1.azimuth);
+          const elev = p1.elevation + t * (p2.elevation - p1.elevation);
+          const angleRad = (az - 90) * Math.PI / 180; // 0=πάνω, 90=δεξιά
+          const radius = (90 - elev) / 90 * r; // 90°=κέντρο, 0°=r
+          const x = cx + radius * Math.cos(angleRad);
+          const y = cy + radius * Math.sin(angleRad);
+          if (az === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+
+      // ---- δημιουργία αρχείου προφίλ 360° ----
+      function generateHorizonFile() {
+        if (recordedPoints.length < 2) return;
+        const pts = [...recordedPoints].sort((a,b) => a.azimuth - b.azimuth);
+        // κυκλική παρεμβολή
+        const wrapped = pts.concat([{azimuth: pts[0].azimuth + 360, elevation: pts[0].elevation}]);
+        const horizon = new Array(360).fill(0);
+        for (let az = 0; az < 360; az++) {
+          let p1, p2;
+          for (let i = 0; i < wrapped.length - 1; i++) {
+            if (az >= wrapped[i].azimuth && az <= wrapped[i+1].azimuth) {
+              p1 = wrapped[i]; p2 = wrapped[i+1]; break;
             }
-            
-            // ---------- ΣΧΕΔΙΑΣΗ ΤΕΧΝΗΤΟΥ ΟΡΙΖΟΝΤΑ ----------
-            function drawArtificialHorizon() {
-                const rect = video.getBoundingClientRect();
-                canvas.width = rect.width;
-                canvas.height = rect.height;
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                
-                const w = canvas.width;
-                const h = canvas.height;
-                const centerX = w / 2;
-                const centerY = h / 2;
-                const vfov = parseFloat(vfovInput.value) || 52;
-                const maxAngle = vfov / 2;
-                
-                const pitchOffset = (currentPitch / maxAngle) * centerY;
-                let horizonY = centerY + pitchOffset;
-                
-                const rollRad = currentRoll * Math.PI / 180;
-                
-                ctx.save();
-                ctx.translate(centerX, horizonY);
-                ctx.rotate(rollRad);
-                ctx.strokeStyle = '#00FF88';
-                ctx.lineWidth = 3;
-                ctx.shadowColor = '#00FF88';
-                ctx.shadowBlur = 8;
-                ctx.beginPath();
-                ctx.moveTo(-w, 0);
-                ctx.lineTo(w, 0);
-                ctx.stroke();
-                ctx.restore();
-            }
-            
-            // ---------- Πίνακας ορίζοντα από σημεία ----------
-            function getHorizonArray() {
-                if (points.length < 2) return null;
-                const backHorizon = parseFloat(backHorizonInput.value) || 90;
-                let horizon = new Array(360).fill(backHorizon);
-                const sorted = [...points].sort((a, b) => a.azimuth - b.azimuth);
-                const minAz = sorted[0].azimuth;
-                const maxAz = sorted[sorted.length-1].azimuth;
-                
-                for (let deg = 0; deg < 360; deg++) {
-                    const azi = deg;
-                    if (azi >= minAz && azi <= maxAz) {
-                        let prev = sorted[0];
-                        let next = sorted[sorted.length-1];
-                        for (let i = 0; i < sorted.length-1; i++) {
-                            if (sorted[i].azimuth <= azi && sorted[i+1].azimuth >= azi) {
-                                prev = sorted[i];
-                                next = sorted[i+1];
-                                break;
-                            }
-                        }
-                        const range = next.azimuth - prev.azimuth;
-                        let t = range === 0 ? 0 : (azi - prev.azimuth) / range;
-                        horizon[deg] = prev.elevation + t * (next.elevation - prev.elevation);
-                    }
-                }
-                return horizon;
-            }
-            
-            // ---------- Ανύψωση από άγγιγμα ----------
-            function getElevationFromTouch(clientY) {
-                const rect = video.getBoundingClientRect();
-                const y = clientY - rect.top;
-                const centerY = rect.height / 2;
-                const delta = centerY - y;
-                const vfov = parseFloat(vfovInput.value) || 52;
-                const maxAngle = vfov / 2;
-                let rawElevation = (delta / centerY) * maxAngle;
-                let correctedElevation = rawElevation - currentPitch;
-                correctedElevation = Math.max(-90, Math.min(90, correctedElevation));
-                return correctedElevation;
-            }
-            
-            function onScreenTap(e) {
-                if (!compassActive || currentHeading === null) return;
-                
-                let clientY;
-                if (e.touches && e.touches.length > 0) {
-                    clientY = e.touches[0].clientY;
-                } else if (e.clientY !== undefined) {
-                    clientY = e.clientY;
-                } else {
-                    return;
-                }
-                
-                const elevation = getElevationFromTouch(clientY);
-                points.push({ azimuth: currentHeading, elevation });
-                elSpan.textContent = elevation.toFixed(1);
-                updatePointList();
-            }
-            
-            appDiv.addEventListener('touchstart', (e) => {
-                const target = e.target;
-                if (target.tagName === 'BUTTON' || target.tagName === 'INPUT') return;
-                e.preventDefault();
-                onScreenTap(e);
-            });
-            
-            appDiv.addEventListener('click', (e) => {
-                const target = e.target;
-                if (target.tagName === 'BUTTON' || target.tagName === 'INPUT') return;
-                onScreenTap(e);
-            });
-            
-            // ---------- Διαχείριση σημείων ----------
-            function updatePointList() {
-                if (points.length === 0) {
-                    pointListDiv.textContent = 'Σημεία: (κανένα)';
-                } else {
-                    const last = points.slice(-5);
-                    pointListDiv.innerHTML = 'Σημεία: ' + last.map(p => `${p.azimuth.toFixed(1)}°/${p.elevation.toFixed(1)}°`).join(', ');
-                    if (points.length > 5) pointListDiv.innerHTML += ' …';
-                }
-            }
-            
-            undoBtn.addEventListener('click', () => {
-                if (points.length > 0) {
-                    points.pop();
-                    updatePointList();
-                }
-            });
-            
-            clearBtn.addEventListener('click', () => {
-                points = [];
-                updatePointList();
-            });
-            
-            // ---------- Εξαγωγή αρχείου ----------
-            function generateHorizonBlob() {
-                const horizon = getHorizonArray();
-                if (!horizon) return null;
-                const backHorizon = parseFloat(backHorizonInput.value) || 90;
-                let content = '# Horizon file for PVGIS\n';
-                content += '# Generated by Horizon PWA\n';
-                content += `# Back horizon: ${backHorizon} deg\n`;
-                for (let i = 0; i < 360; i++) {
-                    content += horizon[i].toFixed(2) + '\n';
-                }
-                return new Blob([content], { type: 'text/plain' });
-            }
-            
-            function downloadHorizonFile() {
-                const blob = generateHorizonBlob();
-                if (!blob) return;
-                
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'horizon_PVGIS.txt';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-            }
-            
-            async function shareHorizonFile() {
-                const blob = generateHorizonBlob();
-                if (!blob) return;
-                
-                const file = new File([blob], 'horizon_PVGIS.txt', { type: 'text/plain' });
-                
-                if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                    try {
-                        await navigator.share({
-                            title: 'Αρχείο Ορίζοντα PVGIS',
-                            text: 'Επισυνάπτεται το αρχείο ορίζοντα για το PVGIS.',
-                            files: [file]
-                        });
-                    } catch (err) {
-                        if (err.name !== 'AbortError') {
-                            alert('Σφάλμα κοινοποίησης: ' + err.message);
-                        }
-                    }
-                } else {
-                    alert('Η συσκευή δεν υποστηρίζει άμεση αποστολή αρχείου. Θα γίνει λήψη του αρχείου.');
-                    downloadHorizonFile();
-                }
-            }
-            
-            exportBtn.addEventListener('click', downloadHorizonFile);
-            shareBtn.addEventListener('click', shareHorizonFile);
-            
-            // ---------- Εκκίνηση ----------
-            enableCompassBtn.addEventListener('click', requestCompassPermission);
-            startCamera();
-        })();
-    </script>
+          }
+          if (!p1 || !p2) {
+            // fallback
+            horizon[az] = 0;
+            continue;
+          }
+          const t = (az - p1.azimuth) / (p2.azimuth - p1.azimuth);
+          horizon[az] = p1.elevation + t * (p2.elevation - p1.elevation);
+        }
+        // δημιουργία string για PVGIS
+        let content = '# Horizon file for PVGIS\n# azimuth (0=North, clockwise) elevation in degrees\n';
+        for (let az = 0; az < 360; az++) {
+          content += horizon[az].toFixed(1) + '\n';
+        }
+        const blob = new Blob([content], {type: 'text/plain'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'horizon_pvgis.txt';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+
+      // ---- αρχικοποίηση ----
+      startBtn.addEventListener('click', async () => {
+        startBtn.disabled = true;
+        const sensorsOk = await requestSensors();
+        if (!sensorsOk) { startBtn.disabled = false; return; }
+        const cameraOk = await startCamera();
+        if (!cameraOk) { startBtn.disabled = false; return; }
+        isListening = true;
+        recordBtn.disabled = false;
+        startBtn.textContent = '✅ Ενεργό';
+        startBtn.style.background = 'rgba(0,255,0,0.3)';
+      });
+
+      recordBtn.addEventListener('click', addRecordedPoint);
+      generateBtn.addEventListener('click', generateHorizonFile);
+
+      // Ενημέρωση chart όταν προστίθενται/αφαιρούνται σημεία (δεν έχουμε διαγραφή, απλά ανανέωση)
+      // Αν θέλετε διαγραφή μπορεί να προστεθεί, εδώ μπαίνει η λίστα για απλότητα
+    })();
+  </script>
 </body>
 </html>
