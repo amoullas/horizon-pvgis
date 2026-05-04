@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Καταγραφέας Ορίζοντα PVGIS – PVGIS‑συμβατό αζιμούθιο</title>
+  <title>Καταγραφέας Ορίζοντα PVGIS – Σάρωση</title>
   <style>
     body {
       margin: 0; overflow: hidden;
@@ -82,6 +82,7 @@
       border: 1px solid rgba(255,255,255,0.5); color: white;
       padding: 14px 20px; border-radius: 30px;
       font-size: 16px; font-weight: 600;
+      user-select: none;
     }
     button:active { background: rgba(255,255,255,0.5); }
     button:disabled { opacity: 0.4; background: rgba(255,255,255,0.1); }
@@ -99,6 +100,29 @@
       display: none;
     }
     #downloadBtn, #shareBtn { display: none; }
+    #scanBtn {
+      background: rgba(0,255,255,0.3);
+      border-color: cyan;
+    }
+    #scanBtn.scanning {
+      background: cyan;
+      color: black;
+      animation: scanPulse 0.8s infinite;
+    }
+    @keyframes scanPulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.6; }
+      100% { opacity: 1; }
+    }
+    #scanCount {
+      position: absolute; bottom: 160px; left: 50%;
+      transform: translateX(-50%);
+      font-size: 14px; color: cyan;
+      background: rgba(0,0,0,0.7);
+      padding: 4px 12px; border-radius: 12px;
+      display: none;
+      pointer-events: none;
+    }
   </style>
 </head>
 <body>
@@ -131,10 +155,12 @@
 
     <div id="recordList"></div>
     <canvas id="chartCanvas" width="120" height="120"></canvas>
+    <div id="scanCount">🔍 0 σημεία</div>
 
     <div id="controls">
       <button id="startBtn">▶️ Έναρξη</button>
       <button id="recordBtn" disabled>📍 Καταγραφή Σημείου</button>
+      <button id="scanBtn" disabled>🔄 Σάρωση (κράτα)</button>
       <button id="generateBtn" disabled>📁 Δημιουργία Horizon File</button>
       <button id="downloadBtn">💾 Λήψη</button>
       <button id="shareBtn">📤 Κοινοποίηση</button>
@@ -153,6 +179,7 @@
       const recordListEl = document.getElementById('recordList');
       const startBtn = document.getElementById('startBtn');
       const recordBtn = document.getElementById('recordBtn');
+      const scanBtn = document.getElementById('scanBtn');
       const generateBtn = document.getElementById('generateBtn');
       const downloadBtn = document.getElementById('downloadBtn');
       const shareBtn = document.getElementById('shareBtn');
@@ -160,6 +187,7 @@
       const ctx = chartCanvas.getContext('2d');
       const horizonBar = document.getElementById('horizonBar');
       const levelIndicator = document.getElementById('levelIndicator');
+      const scanCountEl = document.getElementById('scanCount');
 
       const sAlpha = document.getElementById('sAlpha');
       const sPvgisAz = document.getElementById('sPvgisAz');
@@ -173,10 +201,16 @@
       const sQuality = document.getElementById('sQuality');
 
       let isListening = false;
-      let currentAzimuth = null;   // iPhone αζιμούθιο (0=Βορράς)
+      let currentAzimuth = null;   // iPhone αζιμούθιο
       let currentElevation = null;
-      let recordedPoints = [];      // { azimuth: iphoneAz, elevation }
+      let recordedPoints = [];
       let horizonBlob = null;
+
+      // Σάρωση
+      let scanning = false;
+      let lastScannedAzimuth = null;
+      const SCAN_AZIMUTH_THRESHOLD = 5; // καταγραφή ανά 5° αλλαγής αζιμουθίου
+      let scanCounter = 0;
 
       const ALPHA_HISTORY = 10;
       let alphaSamples = [];
@@ -204,14 +238,14 @@
         const len = Math.sqrt(vx*vx+vy*vy+vz*vz);
         if (len < 1e-6) return { azimuth: 0, elevation: 0 };
         const nx = vx/len, ny = vy/len, nz = vz/len;
-        let iphoneAz = Math.atan2(nx, ny) * 180/Math.PI; // 0=North, 90=East
+        let iphoneAz = Math.atan2(nx, ny) * 180/Math.PI;
         if (iphoneAz < 0) iphoneAz += 360;
         const elevation = Math.asin(nz) * 180/Math.PI;
         return { iphoneAz, elevation };
       }
 
       function iphoneAzToPvgis(iphoneAz) {
-        return ((iphoneAz - 180 + 360) % 360) - 180; // εύρος -180..180
+        return ((iphoneAz - 180 + 360) % 360) - 180;
       }
 
       function evaluateQuality(newAlpha) {
@@ -256,6 +290,7 @@
 
         if (alpha === null || beta === null || gamma === null) {
           recordBtn.disabled = true;
+          scanBtn.disabled = true;
           return;
         }
 
@@ -263,7 +298,7 @@
         updateQualityUI(quality);
 
         const { iphoneAz, elevation } = computeCameraDirection(alpha, beta, gamma);
-        currentAzimuth = iphoneAz; // αποθηκεύουμε ως iPhone
+        currentAzimuth = iphoneAz;
         currentElevation = elevation;
 
         const pvgisAz = iphoneAzToPvgis(iphoneAz);
@@ -277,6 +312,18 @@
         levelIndicator.textContent = `🎚️ ${Math.abs(gamma).toFixed(0)}°`;
 
         recordBtn.disabled = false;
+        scanBtn.disabled = false;
+
+        // Αυτόματη σάρωση αν είναι ενεργή
+        if (scanning) {
+          // Ελέγχουμε αν το αζιμούθιο άλλαξε αρκετά σε σχέση με το τελευταίο που καταγράψαμε
+          if (lastScannedAzimuth === null ||
+              Math.abs(iphoneAz - lastScannedAzimuth) > SCAN_AZIMUTH_THRESHOLD ||
+              (360 - Math.abs(iphoneAz - lastScannedAzimuth)) > SCAN_AZIMUTH_THRESHOLD) {
+            addRecordedPoint(true);
+            lastScannedAzimuth = iphoneAz;
+          }
+        }
       }
 
       function handleMotion(event) {
@@ -326,9 +373,13 @@
         return true;
       }
 
-      function addRecordedPoint() {
+      function addRecordedPoint(fromScan = false) {
         if (currentAzimuth === null || currentElevation === null) return;
-        recordedPoints.push({ azimuth: currentAzimuth, elevation: currentElevation }); // iPhone αζιμούθιο
+        recordedPoints.push({ azimuth: currentAzimuth, elevation: currentElevation });
+        if (fromScan) {
+          scanCounter++;
+          scanCountEl.textContent = `🔍 ${scanCounter} σημεία`;
+        }
         updateRecordList();
         updateChart();
         generateBtn.disabled = recordedPoints.length < 2;
@@ -368,7 +419,7 @@
           const t = (az - p1.azimuth) / (p2.azimuth - p1.azimuth);
           const elev = p1.elevation + t * (p2.elevation - p1.elevation);
           const plotAz = az; // iPhone αζιμούθιο
-          const angleRad = (plotAz - 90) * Math.PI/180; // 0° πάνω (North)
+          const angleRad = (plotAz - 90) * Math.PI/180;
           const radius = (90 - elev) / 90 * r;
           const x = cx + radius * Math.cos(angleRad);
           const y = cy + radius * Math.sin(angleRad);
@@ -379,14 +430,11 @@
 
       function createHorizonFile() {
         if (recordedPoints.length < 2) return;
-
         const pts = [...recordedPoints].sort((a,b)=>a.azimuth-b.azimuth);
         const wrapped = pts.concat([{azimuth: pts[0].azimuth+360, elevation: pts[0].elevation}]);
         const horizon = new Array(360).fill(0);
 
-        // Δημιουργία profile για PVGIS αζιμούθιο (0=South, 1..359)
         for (let pvgisAz = 0; pvgisAz < 360; pvgisAz++) {
-          // αντιστοιχία: pvgisAz 0 (South) -> iPhone az 180
           const iphoneAz = (pvgisAz + 180) % 360;
           let p1, p2;
           for (let i=0; i<wrapped.length-1; i++) {
@@ -394,12 +442,10 @@
               p1 = wrapped[i]; p2 = wrapped[i+1]; break;
             }
           }
-          if (!p1 || !p2) {
-            horizon[pvgisAz] = 0;
-            continue;
+          if (p1 && p2) {
+            const t = (iphoneAz - p1.azimuth) / (p2.azimuth - p1.azimuth);
+            horizon[pvgisAz] = p1.elevation + t * (p2.elevation - p1.elevation);
           }
-          const t = (iphoneAz - p1.azimuth) / (p2.azimuth - p1.azimuth);
-          horizon[pvgisAz] = p1.elevation + t * (p2.elevation - p1.elevation);
         }
 
         let content = '# Horizon file for PVGIS\n';
@@ -411,8 +457,6 @@
         if (navigator.share && navigator.canShare &&
             navigator.canShare({ files: [new File([horizonBlob], 'horizon_pvgis.txt', { type: 'text/plain' })] })) {
           shareBtn.style.display = 'inline-block';
-        } else {
-          shareBtn.style.display = 'none';
         }
       }
 
@@ -435,6 +479,52 @@
         }
       }
 
+      // ---------- Σάρωση ----------
+      function startScan() {
+        scanning = true;
+        lastScannedAzimuth = null;
+        scanCounter = 0;
+        scanCountEl.style.display = 'block';
+        scanCountEl.textContent = '🔍 0 σημεία';
+        scanBtn.classList.add('scanning');
+        scanBtn.textContent = '🔄 Σάρωση (άφησε για stop)';
+      }
+
+      function stopScan() {
+        scanning = false;
+        scanBtn.classList.remove('scanning');
+        scanBtn.textContent = '🔄 Σάρωση (κράτα)';
+        // Δεν κρύβουμε τον μετρητή, μπορεί να τον αφήσει για ενημέρωση
+      }
+
+      // Χειρισμός αφής/ποντικιού για κράτημα
+      scanBtn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        if (!scanBtn.disabled) startScan();
+      });
+
+      scanBtn.addEventListener('pointerup', (e) => {
+        e.preventDefault();
+        stopScan();
+      });
+
+      scanBtn.addEventListener('pointerleave', (e) => {
+        // Αν το ποντίκι φύγει ενώ κρατάμε, σταματάμε
+        if (scanning) stopScan();
+      });
+
+      // Για κινητά, ο χειρισμός touch είναι πιο σωστός
+      scanBtn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        if (!scanBtn.disabled) startScan();
+      });
+
+      scanBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        stopScan();
+      });
+
+      // ---------- Αρχικοποίηση ----------
       startBtn.addEventListener('click', async ()=>{
         startBtn.disabled = true;
         if (!await requestSensors()) { startBtn.disabled = false; return; }
@@ -443,9 +533,11 @@
         startGPS();
         startBtn.textContent = '✅ Ενεργό';
         startBtn.style.background = 'rgba(0,255,0,0.3)';
+        scanBtn.disabled = false; // ενεργοποιείται μόνο όταν έχουμε δεδομένα
+        recordBtn.disabled = false;
       });
 
-      recordBtn.addEventListener('click', addRecordedPoint);
+      recordBtn.addEventListener('click', () => addRecordedPoint(false));
       generateBtn.addEventListener('click', createHorizonFile);
       downloadBtn.addEventListener('click', downloadFile);
       shareBtn.addEventListener('click', shareFile);
