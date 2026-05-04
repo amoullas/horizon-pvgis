@@ -26,12 +26,6 @@
         .settings { display: flex; gap: 6px; align-items: center; font-size: 16px; background: rgba(255,255,255,0.1); padding: 6px 10px; border-radius: 8px; }
         input[type=number] { width: 65px; padding: 6px; font-size: 16px; border-radius: 6px; border: none; }
         .hidden { display: none; }
-
-        #modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 100; justify-content: center; align-items: center; }
-        #modal.show { display: flex; }
-        #modal-content { position: relative; width: 90vw; height: 90vw; max-width: 500px; max-height: 500px; }
-        #polar-canvas { width: 100%; height: 100%; background: white; border-radius: 50%; }
-        #close-modal { position: absolute; top: -10px; right: -10px; background: red; color: white; border: none; border-radius: 50%; width: 30px; height: 30px; font-size: 18px; cursor: pointer; z-index: 110; display: flex; align-items: center; justify-content: center; }
     </style>
 </head>
 <body>
@@ -47,7 +41,6 @@
                     <button id="enable-compass-btn">🧭 Ενεργοποίηση Πυξίδας</button>
                     <button id="undo-btn">↩️ Ακύρωση</button>
                     <button id="clear-btn">🗑️ Καθαρισμός</button>
-                    <button id="preview-btn">📊 Προβολή Ορίζοντα</button>
                     <button id="export-btn">💾 Αποθήκευση</button>
                     <button id="share-btn">📤 Αποστολή</button>
                     <div class="settings">
@@ -58,14 +51,6 @@
                     </div>
                 </div>
             </div>
-        </div>
-    </div>
-
-    <!-- Modal -->
-    <div id="modal">
-        <div id="modal-content">
-            <button id="close-modal">✖</button>
-            <canvas id="polar-canvas"></canvas>
         </div>
     </div>
 
@@ -82,16 +67,12 @@
             const enableCompassBtn = document.getElementById('enable-compass-btn');
             const undoBtn = document.getElementById('undo-btn');
             const clearBtn = document.getElementById('clear-btn');
-            const previewBtn = document.getElementById('preview-btn');
             const exportBtn = document.getElementById('export-btn');
             const shareBtn = document.getElementById('share-btn');
             const vfovInput = document.getElementById('vfov-input');
             const backHorizonInput = document.getElementById('back-horizon-input');
             const compassStatus = document.getElementById('compass-status');
             const appDiv = document.getElementById('app');
-            const modal = document.getElementById('modal');
-            const closeModalBtn = document.getElementById('close-modal');
-            const polarCanvas = document.getElementById('polar-canvas');
             
             let points = [];
             let currentHeading = null;
@@ -130,11 +111,7 @@
                 // Pitch (beta) - κλίση εμπρός/πίσω
                 if (event.beta !== undefined && event.beta !== null) {
                     currentPitch = event.beta;
-                    // Σε iOS, το beta είναι 0 όταν το κινητό είναι όρθιο και κάθετο στο έδαφος.
-                    // Όταν γέρνει προς τα εμπρός (η κορυφή μακριά σου), το beta γίνεται θετικό (έως 180).
-                    // Όταν γέρνει προς τα πίσω, γίνεται αρνητικό (έως -180).
-                    // Θέλουμε μια γωνία από -90 (κοιτάει κάτω) έως 90 (κοιτάει πάνω).
-                    if (currentPitch > 90) currentPitch = 180 - currentPitch; // πάνω από 90, αναποδογυρίζει
+                    if (currentPitch > 90) currentPitch = 180 - currentPitch;
                     if (currentPitch < -90) currentPitch = -180 - currentPitch;
                 }
 
@@ -171,6 +148,7 @@
                 compassActive = true;
                 enableCompassBtn.classList.add('hidden');
                 compassStatus.classList.add('active');
+                drawArtificialHorizon(); // να εμφανιστεί αμέσως η γραμμή
             }
             
             // ---------- ΣΧΕΔΙΑΣΗ ΤΕΧΝΗΤΟΥ ΟΡΙΖΟΝΤΑ ----------
@@ -185,24 +163,17 @@
                 const centerX = w / 2;
                 const centerY = h / 2;
                 const vfov = parseFloat(vfovInput.value) || 52;
-                const maxAngle = vfov / 2; // μισό κατακόρυφο FOV
+                const maxAngle = vfov / 2;
                 
-                // 1. Υπολογισμός της κατακόρυφης θέσης του ορίζοντα στο κέντρο της οθόνης,
-                //    λαμβάνοντας υπόψη το pitch.
-                //    Όταν pitch=0, ο ορίζοντας είναι στο κέντρο.
-                //    Όταν pitch > 0 (κοιτάμε πάνω), ο ορίζοντας κατεβαίνει (μεγαλύτερο y).
                 const pitchOffset = (currentPitch / maxAngle) * centerY;
-                let horizonY = centerY + pitchOffset; // σημείο στο κέντρο X
+                let horizonY = centerY + pitchOffset;
                 
-                // 2. Υπολογισμός της κλίσης της γραμμής λόγω roll.
-                //    Η γωνία κλίσης σε rad ως προς την οριζόντια είναι το roll.
                 const rollRad = currentRoll * Math.PI / 180;
                 
-                // 3. Σχεδίαση της γραμμής που περνά από (centerX, horizonY) με κλίση rollRad.
                 ctx.save();
                 ctx.translate(centerX, horizonY);
                 ctx.rotate(rollRad);
-                ctx.strokeStyle = '#00FF88'; // φωτεινό πράσινο
+                ctx.strokeStyle = '#00FF88';
                 ctx.lineWidth = 3;
                 ctx.shadowColor = '#00FF88';
                 ctx.shadowBlur = 8;
@@ -211,9 +182,6 @@
                 ctx.lineTo(w, 0);
                 ctx.stroke();
                 ctx.restore();
-                
-                // Προαιρετικά, σχεδίαση και της γραμμής του κέντρου της κάμερας (0° ανύψωση) για αναφορά;
-                // Μπορούμε να την αφήσουμε ως έχει.
             }
             
             // ---------- Πίνακας ορίζοντα από σημεία ----------
@@ -250,15 +218,11 @@
                 const rect = video.getBoundingClientRect();
                 const y = clientY - rect.top;
                 const centerY = rect.height / 2;
-                const delta = centerY - y; // θετικό αν πατάμε πάνω από το κέντρο
+                const delta = centerY - y;
                 const vfov = parseFloat(vfovInput.value) || 52;
                 const maxAngle = vfov / 2;
                 let rawElevation = (delta / centerY) * maxAngle;
-                // Διόρθωση για το pitch: αν το κινητό κοιτάει πάνω (pitch > 0), ο ορίζοντας είναι πιο κάτω,
-                // άρα ένα σημείο στην οθόνη αντιστοιχεί σε μικρότερη ανύψωση από ό,τι νομίζουμε.
-                // Αφαιρούμε το pitch.
                 let correctedElevation = rawElevation - currentPitch;
-                // Δεν διορθώνουμε για roll γιατί το roll δεν επηρεάζει την ανύψωση στο κέντρο.
                 correctedElevation = Math.max(-90, Math.min(90, correctedElevation));
                 return correctedElevation;
             }
@@ -316,95 +280,6 @@
                 points = [];
                 updatePointList();
             });
-            
-            // ---------- Σχεδίαση πολικού χάρτη ----------
-            function drawPolarHorizon() {
-                const horizon = getHorizonArray();
-                if (!horizon) {
-                    alert('Χρειάζονται τουλάχιστον 2 σημεία.');
-                    return;
-                }
-                
-                const c = polarCanvas;
-                const pctx = c.getContext('2d');
-                const size = Math.min(c.parentNode.clientWidth, c.parentNode.clientHeight);
-                c.width = size;
-                c.height = size;
-                const w = size, h = size;
-                const cx = w/2, cy = h/2;
-                const maxRadius = w/2 * 0.85;
-                pctx.clearRect(0, 0, w, h);
-                
-                pctx.fillStyle = 'white';
-                pctx.beginPath();
-                pctx.arc(cx, cy, maxRadius, 0, 2*Math.PI);
-                pctx.fill();
-                
-                pctx.fillStyle = 'rgba(128,128,128,0.5)';
-                pctx.beginPath();
-                for (let azi = 0; azi <= 360; azi++) {
-                    const azRad = ((azi - 90) * Math.PI) / 180;
-                    const r = (horizon[azi % 360] / 90) * maxRadius;
-                    const x = cx + r * Math.cos(azRad);
-                    const y = cy + r * Math.sin(azRad);
-                    if (azi === 0) pctx.moveTo(x, y);
-                    else pctx.lineTo(x, y);
-                }
-                for (let azi = 360; azi >= 0; azi--) {
-                    const azRad = ((azi - 90) * Math.PI) / 180;
-                    const x = cx + maxRadius * Math.cos(azRad);
-                    const y = cy + maxRadius * Math.sin(azRad);
-                    pctx.lineTo(x, y);
-                }
-                pctx.closePath();
-                pctx.fill();
-                
-                pctx.strokeStyle = 'red';
-                pctx.lineWidth = 2;
-                pctx.beginPath();
-                for (let azi = 0; azi <= 360; azi++) {
-                    const azRad = ((azi - 90) * Math.PI) / 180;
-                    const r = (horizon[azi % 360] / 90) * maxRadius;
-                    const x = cx + r * Math.cos(azRad);
-                    const y = cy + r * Math.sin(azRad);
-                    if (azi === 0) pctx.moveTo(x, y);
-                    else pctx.lineTo(x, y);
-                }
-                pctx.stroke();
-                
-                pctx.fillStyle = 'black';
-                pctx.font = '12px sans-serif';
-                pctx.textAlign = 'center';
-                ['Β', 'Α', 'Ν', 'Δ'].forEach((label, i) => {
-                    const ang = i * 90;
-                    const rad = ((ang - 90) * Math.PI) / 180;
-                    const lx = cx + (maxRadius + 15) * Math.cos(rad);
-                    const ly = cy + (maxRadius + 15) * Math.sin(rad);
-                    pctx.fillText(label, lx, ly);
-                });
-                
-                pctx.strokeStyle = 'lightgray';
-                pctx.lineWidth = 0.5;
-                [0.333, 0.666].forEach(factor => {
-                    pctx.beginPath();
-                    pctx.arc(cx, cy, maxRadius * factor, 0, 2*Math.PI);
-                    pctx.stroke();
-                });
-                pctx.beginPath();
-                pctx.moveTo(cx - maxRadius, cy);
-                pctx.lineTo(cx + maxRadius, cy);
-                pctx.moveTo(cx, cy - maxRadius);
-                pctx.lineTo(cx, cy + maxRadius);
-                pctx.stroke();
-            }
-            
-            previewBtn.addEventListener('click', () => {
-                modal.classList.add('show');
-                setTimeout(drawPolarHorizon, 100);
-            });
-            
-            closeModalBtn.addEventListener('click', () => modal.classList.remove('show'));
-            modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('show'); });
             
             // ---------- Εξαγωγή αρχείου ----------
             function generateHorizonBlob() {
