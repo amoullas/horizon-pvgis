@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Καταγραφέας Ορίζοντα PVGIS – v2 (ανθεκτική πυξίδα)</title>
+  <title>Καταγραφέας Ορίζοντα PVGIS – Live Αισθητήρες</title>
   <style>
     body {
       margin: 0;
@@ -23,23 +23,23 @@
       width: 100%; height: 100%;
       object-fit: cover;
     }
+
+    /* Σταυρόνημα */
     #crosshair {
       position: absolute; top: 50%; left: 50%;
       width: 70px; height: 70px;
       margin: -35px 0 0 -35px;
-      border: 2px solid cyan;
-      border-radius: 50%;
+      border: 2px solid cyan; border-radius: 50%;
       box-shadow: 0 0 12px cyan;
       pointer-events: none;
     }
     #crosshair::after, #crosshair::before {
-      content: '';
-      position: absolute;
-      background: cyan;
+      content: ''; position: absolute; background: cyan;
     }
     #crosshair::after { top: 50%; left: 0; right: 0; height: 1px; }
     #crosshair::before { top: 0; bottom: 0; left: 50%; width: 1px; }
 
+    /* Τεχνητός ορίζοντας */
     #horizonBar {
       position: absolute; top: 50%; left: 10%;
       width: 80%; height: 2px;
@@ -58,18 +58,15 @@
       pointer-events: none;
     }
 
+    /* Μήνυμα βαθμονόμησης */
     #calibrationNotice {
       position: absolute; top: 35%; left: 50%;
       transform: translate(-50%, -50%);
       background: rgba(255, 140, 0, 0.9);
-      color: black;
-      padding: 12px 20px;
-      border-radius: 20px;
-      font-weight: bold;
-      font-size: 16px;
-      text-align: center;
-      display: none;
-      z-index: 20;
+      color: black; padding: 12px 20px;
+      border-radius: 20px; font-weight: bold;
+      font-size: 16px; text-align: center;
+      display: none; z-index: 20;
       animation: pulse 1.2s infinite;
     }
     @keyframes pulse {
@@ -78,21 +75,39 @@
       100% { opacity: 0.85; transform: translate(-50%, -50%) scale(1); }
     }
 
+    /* Πάνελ αισθητήρων – πάντα ορατό */
+    #liveSensorPanel {
+      position: absolute; top: 10px; left: 10px;
+      background: rgba(0,0,0,0.75);
+      color: #0f0; font-family: monospace;
+      font-size: 11px; padding: 10px;
+      border-radius: 10px;
+      max-width: 200px;
+      z-index: 15;
+      line-height: 1.5;
+      pointer-events: none;
+      border: 1px solid rgba(255,255,255,0.3);
+    }
+    #liveSensorPanel .label { color: #aaa; }
+    #liveSensorPanel .value { color: #0f0; font-weight: bold; }
+    #liveSensorPanel .warn { color: orange; }
+
+    /* HUD κύριων ενδείξεων */
     #hud {
       position: absolute; bottom: 130px; left: 20px;
       background: rgba(0,0,0,0.7);
       padding: 10px; border-radius: 12px;
       font-size: 14px; line-height: 1.5;
-      pointer-events: none;
-      z-index: 10;
+      pointer-events: none; z-index: 10;
     }
     #compassQuality {
       display: inline-block;
       width: 12px; height: 12px;
       border-radius: 50%;
-      margin-left: 4px;
       background: gray;
+      margin-left: 4px;
     }
+
     #controls {
       position: absolute; bottom: 20px; left: 0; right: 0;
       display: flex; justify-content: center; gap: 10px;
@@ -103,16 +118,12 @@
       background: rgba(255,255,255,0.2);
       backdrop-filter: blur(10px);
       border: 1px solid rgba(255,255,255,0.5);
-      color: white;
-      padding: 14px 20px;
-      border-radius: 30px;
-      font-size: 16px;
-      font-weight: 600;
+      color: white; padding: 14px 20px;
+      border-radius: 30px; font-size: 16px; font-weight: 600;
     }
     button:active { background: rgba(255,255,255,0.5); }
     button:disabled {
-      opacity: 0.4;
-      background: rgba(255,255,255,0.1);
+      opacity: 0.4; background: rgba(255,255,255,0.1);
     }
     #recordList {
       position: absolute; top: 20px; right: 20px;
@@ -126,8 +137,7 @@
       position: absolute; bottom: 160px; right: 10px;
       width: 120px; height: 120px;
       border-radius: 50%; background: rgba(0,0,0,0.5);
-      border: 1px solid white;
-      display: none;
+      border: 1px solid white; display: none;
     }
   </style>
 </head>
@@ -137,7 +147,20 @@
     <div id="horizonBar"></div>
     <div id="levelIndicator">🎚️ 0°</div>
     <div id="crosshair"></div>
-    <div id="calibrationNotice">🧭 Χαμηλή ακρίβεια πυξίδας – κουνήστε σε σχήμα 8</div>
+    <div id="calibrationNotice">🧭 Χαμηλή ακρίβεια – κουνήστε σε σχήμα 8</div>
+
+    <!-- Μόνιμο πάνελ όλων των αισθητήρων -->
+    <div id="liveSensorPanel">
+      <div><span class="label">🧭 Alpha:</span> <span id="sAlpha" class="value">--</span></div>
+      <div><span class="label">📐 Beta:</span> <span id="sBeta" class="value">--</span></div>
+      <div><span class="label">🔄 Gamma:</span> <span id="sGamma" class="value">--</span></div>
+      <div><span class="label">📍 Absolute:</span> <span id="sAbsolute" class="value">--</span></div>
+      <div><span class="label">📳 Accel:</span> <span id="sAccel" class="value">--</span></div>
+      <div><span class="label">🌀 Gyro:</span> <span id="sGyro" class="value">--</span></div>
+      <div><span class="label">🌍 GPS:</span> <span id="sGPS" class="value">--</span></div>
+      <div><span class="label">🎥 Κάμερα:</span> <span id="sCamera" class="value">--</span></div>
+      <div><span class="label">⭐ Ποιότητα:</span> <span id="sQuality" class="value">--</span></div>
+    </div>
 
     <div id="hud">
       <div id="azimuthDisplay">Αζιμούθιο: --°</div>
@@ -174,23 +197,30 @@
       const horizonBar = document.getElementById('horizonBar');
       const levelIndicator = document.getElementById('levelIndicator');
 
+      // Live sensor panel elements
+      const sAlpha = document.getElementById('sAlpha');
+      const sBeta = document.getElementById('sBeta');
+      const sGamma = document.getElementById('sGamma');
+      const sAbsolute = document.getElementById('sAbsolute');
+      const sAccel = document.getElementById('sAccel');
+      const sGyro = document.getElementById('sGyro');
+      const sGPS = document.getElementById('sGPS');
+      const sCamera = document.getElementById('sCamera');
+      const sQuality = document.getElementById('sQuality');
+
       let isListening = false;
       let currentAzimuth = null;
       let currentElevation = null;
       let recordedPoints = [];
 
-      // Μετρικές σταθερότητας
-      const ALPHA_HISTORY = 10;       // αριθμός δειγμάτων
+      const ALPHA_HISTORY = 10;
       let alphaSamples = [];
-      let quality = 'unknown';        // 'good', 'ok', 'poor'
+      let quality = 'unknown';
 
       function toRad(deg) { return deg * Math.PI / 180; }
 
-      // Υπολογισμός 3D κατεύθυνσης (ίδιος όπως πριν)
       function computeCameraDirection(alpha, beta, gamma) {
-        const a = toRad(alpha);
-        const b = toRad(beta);
-        const c = toRad(gamma);
+        const a = toRad(alpha), b = toRad(beta), c = toRad(gamma);
         const cosA = Math.cos(a), sinA = Math.sin(a);
         const cosB = Math.cos(b), sinB = Math.sin(b);
         const cosC = Math.cos(c), sinC = Math.sin(c);
@@ -205,9 +235,7 @@
         const m32 = sinB;
         const m33 = cosB*cosC;
 
-        const vx = -m13;
-        const vy = -m23;
-        const vz = -m33;
+        const vx = -m13, vy = -m23, vz = -m33;
         const len = Math.sqrt(vx*vx+vy*vy+vz*vz);
         if (len < 1e-6) return { azimuth: 0, elevation: 0 };
         const nx = vx/len, ny = vy/len, nz = vz/len;
@@ -217,19 +245,16 @@
         return { azimuth, elevation };
       }
 
-      // Εκτίμηση ποιότητας πυξίδας από διασπορά alpha
       function evaluateQuality(newAlpha) {
         alphaSamples.push(newAlpha);
         if (alphaSamples.length > ALPHA_HISTORY) alphaSamples.shift();
         if (alphaSamples.length < 3) return 'unknown';
-
-        let sum = 0, min = 360, max = 0;
+        let min = 360, max = 0;
         for (let v of alphaSamples) {
-          sum += v;
           if (v < min) min = v;
           if (v > max) max = v;
         }
-        const range = (max - min); // 0-360
+        const range = max - min;
         if (range < 2.0) return 'good';
         else if (range < 8.0) return 'ok';
         else return 'poor';
@@ -245,30 +270,30 @@
         }
         qualityDot.style.background = color;
         qualityText.textContent = text;
-        if (qual === 'poor') {
-          calibrationNotice.style.display = 'block';
-        } else if (qual === 'good' || qual === 'ok') {
-          calibrationNotice.style.display = 'none';
-        }
+        sQuality.textContent = text;
+        sQuality.style.color = color;
+        calibrationNotice.style.display = (qual === 'poor') ? 'block' : 'none';
       }
 
-      // main event handler
       function handleOrientation(event) {
         if (!isListening) return;
-        const alpha = event.alpha;
-        const beta = event.beta;
-        const gamma = event.gamma;
+        const alpha = event.alpha, beta = event.beta, gamma = event.gamma;
+        const absolute = event.absolute;
+
+        // Ενημέρωση live panel
+        sAlpha.textContent = alpha !== null ? alpha.toFixed(1) : 'null';
+        sBeta.textContent = beta !== null ? beta.toFixed(1) : 'null';
+        sGamma.textContent = gamma !== null ? gamma.toFixed(1) : 'null';
+        sAbsolute.textContent = absolute ? '✅' : '❌';
 
         if (alpha === null || beta === null || gamma === null) {
           recordBtn.disabled = true;
           return;
         }
 
-        // Αξιολόγηση ποιότητας πυξίδας
         quality = evaluateQuality(alpha);
         updateQualityUI(quality);
 
-        // Υπολογισμός πάντα (αγνοούμε το absolute)
         const { azimuth, elevation } = computeCameraDirection(alpha, beta, gamma);
         currentAzimuth = azimuth;
         currentElevation = elevation;
@@ -277,15 +302,38 @@
         elevationEl.textContent = `Ύψος: ${elevation.toFixed(1)}°`;
         pitchRollEl.textContent = `Κλίση: β=${beta.toFixed(1)}° γ=${gamma.toFixed(1)}°`;
 
-        // Τεχνητός ορίζοντας
         horizonBar.style.transform = `rotate(${-gamma}deg)`;
         levelIndicator.textContent = `🎚️ ${Math.abs(gamma).toFixed(0)}°`;
 
-        // Ενεργοποίηση καταγραφής αν έχουμε έστω κάποια τιμή (ο χρήστης αποφασίζει)
         recordBtn.disabled = false;
       }
 
-      // --- Camera ---
+      function handleMotion(event) {
+        if (!isListening) return;
+        const acc = event.accelerationIncludingGravity;
+        const rot = event.rotationRate;
+        if (acc) {
+          sAccel.textContent = `x${acc.x?.toFixed(1)} y${acc.y?.toFixed(1)} z${acc.z?.toFixed(1)}`;
+        }
+        if (rot) {
+          sGyro.textContent = `α${rot.alpha?.toFixed(2)} β${rot.beta?.toFixed(2)} γ${rot.gamma?.toFixed(2)}`;
+        }
+      }
+
+      function startGPS() {
+        if (!navigator.geolocation) {
+          sGPS.textContent = 'μη διαθέσιμο';
+          return;
+        }
+        navigator.geolocation.watchPosition(
+          (pos) => {
+            sGPS.textContent = `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
+          },
+          (err) => { sGPS.textContent = 'σφάλμα'; },
+          { enableHighAccuracy: true, maximumAge: 5000 }
+        );
+      }
+
       async function startCamera() {
         try {
           const stream = await navigator.mediaDevices.getUserMedia({
@@ -293,14 +341,15 @@
             audio: false
           });
           video.srcObject = stream;
+          sCamera.textContent = '✅ Wide';
           return true;
         } catch (err) {
+          sCamera.textContent = '❌ σφάλμα';
           alert('Σφάλμα κάμερας: ' + err.message);
           return false;
         }
       }
 
-      // --- Sensors permission (iOS 13+) ---
       async function requestSensors() {
         if (typeof DeviceOrientationEvent !== 'undefined' &&
             typeof DeviceOrientationEvent.requestPermission === 'function') {
@@ -318,7 +367,6 @@
         return true;
       }
 
-      // --- Καταγραφή ---
       function addRecordedPoint() {
         if (currentAzimuth === null || currentElevation === null) return;
         recordedPoints.push({ azimuth: currentAzimuth, elevation: currentElevation });
@@ -328,20 +376,15 @@
       }
 
       function updateRecordList() {
-        if (recordedPoints.length === 0) {
-          recordListEl.style.display = 'none';
-          return;
-        }
-        recordListEl.style.display = 'block';
-        recordListEl.innerHTML = '<strong>Σημεία:</strong><br>' +
-          recordedPoints.map((p,i) => `${i+1}: ${p.azimuth.toFixed(0)}° / ${p.elevation.toFixed(1)}°`).join('<br>');
+        recordListEl.style.display = recordedPoints.length ? 'block' : 'none';
+        recordListEl.innerHTML = recordedPoints.length
+          ? '<strong>Σημεία:</strong><br>' + recordedPoints.map((p,i) =>
+              `${i+1}: ${p.azimuth.toFixed(0)}° / ${p.elevation.toFixed(1)}°`).join('<br>')
+          : '';
       }
 
       function updateChart() {
-        if (recordedPoints.length < 2) {
-          chartCanvas.style.display = 'none';
-          return;
-        }
+        if (recordedPoints.length < 2) { chartCanvas.style.display = 'none'; return; }
         chartCanvas.style.display = 'block';
         const w = chartCanvas.width, h = chartCanvas.height;
         ctx.clearRect(0, 0, w, h);
@@ -367,7 +410,6 @@
         ctx.stroke();
       }
 
-      // --- Horizon file ---
       function generateHorizonFile() {
         if (recordedPoints.length<2) return;
         const pts=[...recordedPoints].sort((a,b)=>a.azimuth-b.azimuth);
@@ -390,7 +432,6 @@
         document.body.removeChild(a);URL.revokeObjectURL(url);
       }
 
-      // --- Init ---
       startBtn.addEventListener('click', async ()=>{
         startBtn.disabled=true;
         const sensOk=await requestSensors();
@@ -398,16 +439,17 @@
         const camOk=await startCamera();
         if(!camOk){startBtn.disabled=false;return;}
         isListening=true;
+        startGPS();
         startBtn.textContent='✅ Ενεργό';
         startBtn.style.background='rgba(0,255,0,0.3)';
-        // το recordBtn ενεργοποιείται μόλις λάβουμε το πρώτο orientation event
       });
 
       recordBtn.addEventListener('click', addRecordedPoint);
       generateBtn.addEventListener('click', generateHorizonFile);
 
       window.addEventListener('deviceorientation', handleOrientation, true);
-      // Αρχική κατάσταση: record disabled μέχρι να έχουμε δεδομένα
+      window.addEventListener('devicemotion', handleMotion, true);
+
       recordBtn.disabled = true;
       generateBtn.disabled = true;
     })();
