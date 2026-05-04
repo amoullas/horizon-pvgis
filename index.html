@@ -16,9 +16,10 @@
         #overlay { position: absolute; top:0; left:0; width:100%; height:100%; display: flex; flex-direction: column; justify-content: space-between; z-index: 10; pointer-events: none; }
         #crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 60px; height: 60px; border: 2px dashed rgba(0,255,0,0.6); border-radius: 50%; pointer-events: none; z-index: 5; }
         #horizon-line { position: absolute; top: 50%; left: 0; width: 100%; height: 1px; background: rgba(0,255,0,0.4); pointer-events: none; z-index: 5; }
+        #realtime-horizon { position: absolute; left: 0; width: 100%; height: 2px; background: rgba(255,255,0,0.8); pointer-events: none; z-index: 6; box-shadow: 0 0 8px rgba(255,255,0,0.6); }
         #compass-status { position: absolute; top: 10px; right: 10px; width: 14px; height: 14px; border-radius: 50%; background: red; z-index: 20; }
         #compass-status.active { background: #00ff00; }
-        #info { background: rgba(0,0,0,0.7); padding: 10px; font-size: 20px; text-align: center; font-weight: 500; z-index: 10; pointer-events: none; }
+        #info { background: rgba(0,0,0,0.7); padding: 10px; font-size: 18px; text-align: center; font-weight: 500; z-index: 10; pointer-events: none; }
         .controls-container { pointer-events: auto; }
         #point-list { max-height: 80px; overflow-y: auto; background: rgba(0,0,0,0.6); margin: 5px 5px 0 5px; padding: 8px; font-size: 14px; z-index: 10; pointer-events: auto; }
         #controls { background: rgba(0,0,0,0.7); padding: 16px 10px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; align-items: center; z-index: 10; pointer-events: auto; }
@@ -27,27 +28,35 @@
         .settings { display: flex; gap: 6px; align-items: center; font-size: 16px; background: rgba(255,255,255,0.1); padding: 6px 10px; border-radius: 8px; }
         input[type=number] { width: 65px; padding: 6px; font-size: 16px; border-radius: 6px; border: none; }
         .hidden { display: none; }
+
+        #modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 100; justify-content: center; align-items: center; }
+        #modal.show { display: flex; }
+        #modal-content { position: relative; width: 90vw; height: 90vw; max-width: 500px; max-height: 500px; }
+        #horizon-canvas { width: 100%; height: 100%; background: white; border-radius: 50%; }
+        #close-modal { position: absolute; top: -10px; right: -10px; background: red; color: white; border: none; border-radius: 50%; width: 30px; height: 30px; font-size: 18px; cursor: pointer; z-index: 110; display: flex; align-items: center; justify-content: center; }
     </style>
 </head>
 <body>
     <div id="app">
         <video id="video" autoplay playsinline></video>
         <div id="horizon-line"></div>
+        <div id="realtime-horizon"></div>
         <div id="crosshair"></div>
         <div id="compass-status"></div>
         <div id="overlay">
-            <div id="info">🧭 Azimuth: <span id="az-value">---</span>° | 📐 Elevation: <span id="el-value">---</span>°</div>
+            <div id="info">🧭 Azimuth: <span id="az-value">---</span>° | Roll: <span id="roll-value">---</span>° | 📐 Elevation: <span id="el-value">---</span>°</div>
             <div class="controls-container">
                 <div id="point-list">Σημεία: (κανένα)</div>
                 <div id="controls">
                     <button id="enable-compass-btn">🧭 Ενεργοποίηση Πυξίδας</button>
                     <button id="undo-btn">↩️ Ακύρωση</button>
                     <button id="clear-btn">🗑️ Καθαρισμός</button>
+                    <button id="preview-btn">📊 Προβολή Ορίζοντα</button>
                     <button id="export-btn">💾 Αποθήκευση</button>
                     <button id="share-btn">📤 Αποστολή</button>
                     <div class="settings">
                         <span>VFOV:</span>
-                        <input type="number" id="vfov-input" value="72" step="1" min="30" max="90"><span>°</span>
+                        <input type="number" id="vfov-input" value="52" step="1" min="30" max="90"><span>°</span>
                         <span>Back:</span>
                         <input type="number" id="back-horizon-input" value="90" step="1" min="0" max="90"><span>°</span>
                     </div>
@@ -55,24 +64,40 @@
             </div>
         </div>
     </div>
+
+    <div id="modal">
+        <div id="modal-content">
+            <button id="close-modal">✖</button>
+            <canvas id="horizon-canvas"></canvas>
+        </div>
+    </div>
+
     <script>
         (function() {
             const video = document.getElementById('video');
             const azSpan = document.getElementById('az-value');
+            const rollSpan = document.getElementById('roll-value');
             const elSpan = document.getElementById('el-value');
             const pointListDiv = document.getElementById('point-list');
             const enableCompassBtn = document.getElementById('enable-compass-btn');
             const undoBtn = document.getElementById('undo-btn');
             const clearBtn = document.getElementById('clear-btn');
+            const previewBtn = document.getElementById('preview-btn');
             const exportBtn = document.getElementById('export-btn');
             const shareBtn = document.getElementById('share-btn');
             const vfovInput = document.getElementById('vfov-input');
             const backHorizonInput = document.getElementById('back-horizon-input');
             const compassStatus = document.getElementById('compass-status');
             const appDiv = document.getElementById('app');
+            const modal = document.getElementById('modal');
+            const closeModalBtn = document.getElementById('close-modal');
+            const horizonCanvas = document.getElementById('horizon-canvas');
+            const realtimeHorizon = document.getElementById('realtime-horizon');
+            const horizonLine = document.getElementById('horizon-line');
             
             let points = [];
             let currentHeading = null;
+            let currentRoll = 0;
             let compassActive = false;
             
             // ---------- Κάμερα ----------
@@ -88,7 +113,7 @@
                 }
             }
             
-            // ---------- Πυξίδα ----------
+            // ---------- Αισθητήρες ----------
             function handleOrientation(event) {
                 let heading = null;
                 if (event.webkitCompassHeading !== undefined) {
@@ -101,6 +126,15 @@
                     currentHeading = heading;
                     azSpan.textContent = currentHeading.toFixed(1);
                 }
+                
+                if (event.gamma !== undefined) {
+                    currentRoll = event.gamma || 0;
+                    if (Math.abs(currentRoll) > 45) currentRoll = 0;
+                }
+                
+                rollSpan.textContent = currentRoll.toFixed(1);
+                updateRealtimeHorizon();
+                updateHorizonLine();
             }
             
             function requestCompassPermission() {
@@ -129,20 +163,87 @@
                 compassStatus.classList.add('active');
             }
             
-            // ---------- Υπολογισμός ανύψωσης ----------
+            // ---------- Ενημέρωση θέσης γραμμών ----------
+            function updateHorizonLine() {
+                const rect = video.getBoundingClientRect();
+                const centerY = rect.height / 2;
+                const vfov = parseFloat(vfovInput.value) || 52;
+                const maxAngle = vfov / 2;
+                const rollDelta = (currentRoll / maxAngle) * centerY;
+                const yPos = centerY + rollDelta;
+                horizonLine.style.top = yPos + 'px';
+            }
+            
+            // ---------- Πίνακας ορίζοντα ----------
+            function getHorizonArray() {
+                if (points.length < 2) return null;
+                const backHorizon = parseFloat(backHorizonInput.value) || 90;
+                let horizon = new Array(360).fill(backHorizon);
+                const sorted = [...points].sort((a, b) => a.azimuth - b.azimuth);
+                const minAz = sorted[0].azimuth;
+                const maxAz = sorted[sorted.length-1].azimuth;
+                
+                for (let deg = 0; deg < 360; deg++) {
+                    const azi = deg;
+                    if (azi >= minAz && azi <= maxAz) {
+                        let prev = sorted[0];
+                        let next = sorted[sorted.length-1];
+                        for (let i = 0; i < sorted.length-1; i++) {
+                            if (sorted[i].azimuth <= azi && sorted[i+1].azimuth >= azi) {
+                                prev = sorted[i];
+                                next = sorted[i+1];
+                                break;
+                            }
+                        }
+                        const range = next.azimuth - prev.azimuth;
+                        let t = range === 0 ? 0 : (azi - prev.azimuth) / range;
+                        horizon[deg] = prev.elevation + t * (next.elevation - prev.elevation);
+                    }
+                }
+                return horizon;
+            }
+            
+            // ---------- Γραμμή πραγματικού χρόνου ----------
+            function updateRealtimeHorizon() {
+                if (!currentHeading || points.length < 2) {
+                    realtimeHorizon.style.display = 'none';
+                    return;
+                }
+                const horizon = getHorizonArray();
+                if (!horizon) {
+                    realtimeHorizon.style.display = 'none';
+                    return;
+                }
+                const azIdx = Math.round(currentHeading) % 360;
+                const elevation = horizon[azIdx];
+                const rect = video.getBoundingClientRect();
+                const centerY = rect.height / 2;
+                const vfov = parseFloat(vfovInput.value) || 52;
+                const maxAngle = vfov / 2;
+                
+                const elevDelta = (elevation / maxAngle) * centerY;
+                const rollDelta = (currentRoll / maxAngle) * centerY;
+                
+                let yPos = centerY - elevDelta + rollDelta;
+                yPos = Math.max(0, Math.min(rect.height - 2, yPos));
+                realtimeHorizon.style.top = yPos + 'px';
+                realtimeHorizon.style.display = 'block';
+            }
+            
+            // ---------- Ανύψωση από άγγιγμα ----------
             function getElevationFromTouch(clientY) {
                 const rect = video.getBoundingClientRect();
                 const y = clientY - rect.top;
                 const centerY = rect.height / 2;
                 const delta = centerY - y;
-                const vfov = parseFloat(vfovInput.value) || 72;
+                const vfov = parseFloat(vfovInput.value) || 52;
                 const maxAngle = vfov / 2;
-                let elevation = (delta / centerY) * maxAngle;
-                elevation = Math.max(-90, Math.min(90, elevation));
-                return elevation;
+                let rawElevation = (delta / centerY) * maxAngle;
+                let correctedElevation = rawElevation - currentRoll;
+                correctedElevation = Math.max(-90, Math.min(90, correctedElevation));
+                return correctedElevation;
             }
             
-            // ---------- Χειρισμός αγγίγματος ----------
             function onScreenTap(e) {
                 if (!compassActive || currentHeading === null) return;
                 
@@ -159,10 +260,7 @@
                 points.push({ azimuth: currentHeading, elevation });
                 elSpan.textContent = elevation.toFixed(1);
                 updatePointList();
-                
-                const line = document.getElementById('horizon-line');
-                line.style.background = 'rgba(0,255,0,0.9)';
-                setTimeout(() => { line.style.background = 'rgba(0,255,0,0.4)'; }, 200);
+                updateRealtimeHorizon();
             }
             
             appDiv.addEventListener('touchstart', (e) => {
@@ -193,44 +291,110 @@
                 if (points.length > 0) {
                     points.pop();
                     updatePointList();
+                    updateRealtimeHorizon();
                 }
             });
             
             clearBtn.addEventListener('click', () => {
                 points = [];
                 updatePointList();
+                realtimeHorizon.style.display = 'none';
             });
             
-            // ---------- Δημιουργία του αρχείου (επιστρέφει Blob και όνομα) ----------
+            // ---------- Σχεδίαση πολικού χάρτη ----------
+            function drawPolarHorizon() {
+                const horizon = getHorizonArray();
+                if (!horizon) {
+                    alert('Χρειάζονται τουλάχιστον 2 σημεία.');
+                    return;
+                }
+                
+                const canvas = horizonCanvas;
+                const ctx = canvas.getContext('2d');
+                const size = Math.min(canvas.parentNode.clientWidth, canvas.parentNode.clientHeight);
+                canvas.width = size;
+                canvas.height = size;
+                const w = size, h = size;
+                const cx = w/2, cy = h/2;
+                const maxRadius = w/2 * 0.85;
+                ctx.clearRect(0, 0, w, h);
+                
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(cx, cy, maxRadius, 0, 2*Math.PI);
+                ctx.fill();
+                
+                ctx.fillStyle = 'rgba(128,128,128,0.5)';
+                ctx.beginPath();
+                for (let azi = 0; azi <= 360; azi++) {
+                    const azRad = ((azi - 90) * Math.PI) / 180;
+                    const r = (horizon[azi % 360] / 90) * maxRadius;
+                    const x = cx + r * Math.cos(azRad);
+                    const y = cy + r * Math.sin(azRad);
+                    if (azi === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                for (let azi = 360; azi >= 0; azi--) {
+                    const azRad = ((azi - 90) * Math.PI) / 180;
+                    const x = cx + maxRadius * Math.cos(azRad);
+                    const y = cy + maxRadius * Math.sin(azRad);
+                    ctx.lineTo(x, y);
+                }
+                ctx.closePath();
+                ctx.fill();
+                
+                ctx.strokeStyle = 'red';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                for (let azi = 0; azi <= 360; azi++) {
+                    const azRad = ((azi - 90) * Math.PI) / 180;
+                    const r = (horizon[azi % 360] / 90) * maxRadius;
+                    const x = cx + r * Math.cos(azRad);
+                    const y = cy + r * Math.sin(azRad);
+                    if (azi === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+                
+                ctx.fillStyle = 'black';
+                ctx.font = '12px sans-serif';
+                ctx.textAlign = 'center';
+                ['Β', 'Α', 'Ν', 'Δ'].forEach((label, i) => {
+                    const ang = i * 90;
+                    const rad = ((ang - 90) * Math.PI) / 180;
+                    const lx = cx + (maxRadius + 15) * Math.cos(rad);
+                    const ly = cy + (maxRadius + 15) * Math.sin(rad);
+                    ctx.fillText(label, lx, ly);
+                });
+                
+                ctx.strokeStyle = 'lightgray';
+                ctx.lineWidth = 0.5;
+                [0.333, 0.666].forEach(factor => {
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, maxRadius * factor, 0, 2*Math.PI);
+                    ctx.stroke();
+                });
+                ctx.beginPath();
+                ctx.moveTo(cx - maxRadius, cy);
+                ctx.lineTo(cx + maxRadius, cy);
+                ctx.moveTo(cx, cy - maxRadius);
+                ctx.lineTo(cx, cy + maxRadius);
+                ctx.stroke();
+            }
+            
+            previewBtn.addEventListener('click', () => {
+                modal.classList.add('show');
+                setTimeout(drawPolarHorizon, 100);
+            });
+            
+            closeModalBtn.addEventListener('click', () => modal.classList.remove('show'));
+            modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('show'); });
+            
+            // ---------- Εξαγωγή αρχείου ----------
             function generateHorizonBlob() {
-                if (points.length < 2) {
-                    alert('Χρειάζονται τουλάχιστον 2 σημεία για παρεμβολή.');
-                    return null;
-                }
+                const horizon = getHorizonArray();
+                if (!horizon) return null;
                 const backHorizon = parseFloat(backHorizonInput.value) || 90;
-                let horizon = new Array(360).fill(backHorizon);
-                const sorted = [...points].sort((a, b) => a.azimuth - b.azimuth);
-                const minAz = sorted[0].azimuth;
-                const maxAz = sorted[sorted.length-1].azimuth;
-                
-                for (let deg = 0; deg < 360; deg++) {
-                    const azi = deg;
-                    if (azi >= minAz && azi <= maxAz) {
-                        let prev = sorted[0];
-                        let next = sorted[sorted.length-1];
-                        for (let i = 0; i < sorted.length-1; i++) {
-                            if (sorted[i].azimuth <= azi && sorted[i+1].azimuth >= azi) {
-                                prev = sorted[i];
-                                next = sorted[i+1];
-                                break;
-                            }
-                        }
-                        const range = next.azimuth - prev.azimuth;
-                        let t = range === 0 ? 0 : (azi - prev.azimuth) / range;
-                        horizon[deg] = prev.elevation + t * (next.elevation - prev.elevation);
-                    }
-                }
-                
                 let content = '# Horizon file for PVGIS\n';
                 content += '# Generated by Horizon PWA\n';
                 content += `# Back horizon: ${backHorizon} deg\n`;
@@ -240,7 +404,6 @@
                 return new Blob([content], { type: 'text/plain' });
             }
             
-            // ---------- Αποθήκευση (Download) ----------
             function downloadHorizonFile() {
                 const blob = generateHorizonBlob();
                 if (!blob) return;
@@ -255,7 +418,6 @@
                 URL.revokeObjectURL(url);
             }
             
-            // ---------- Αποστολή (Share Sheet) ----------
             async function shareHorizonFile() {
                 const blob = generateHorizonBlob();
                 if (!blob) return;
@@ -275,7 +437,6 @@
                         }
                     }
                 } else {
-                    // Fallback: άνοιγμα σε νέα καρτέλα ή download
                     alert('Η συσκευή δεν υποστηρίζει άμεση αποστολή αρχείου. Θα γίνει λήψη του αρχείου.');
                     downloadHorizonFile();
                 }
