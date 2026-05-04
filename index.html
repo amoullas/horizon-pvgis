@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Καταγραφέας Ορίζοντα PVGIS – Live Αισθητήρες</title>
+  <title>Καταγραφέας Ορίζοντα PVGIS – Live Αισθητήρες + Share</title>
   <style>
     body {
       margin: 0;
@@ -58,7 +58,6 @@
       pointer-events: none;
     }
 
-    /* Μήνυμα βαθμονόμησης */
     #calibrationNotice {
       position: absolute; top: 35%; left: 50%;
       transform: translate(-50%, -50%);
@@ -75,7 +74,6 @@
       100% { opacity: 0.85; transform: translate(-50%, -50%) scale(1); }
     }
 
-    /* Πάνελ αισθητήρων – πάντα ορατό */
     #liveSensorPanel {
       position: absolute; top: 10px; left: 10px;
       background: rgba(0,0,0,0.75);
@@ -90,9 +88,7 @@
     }
     #liveSensorPanel .label { color: #aaa; }
     #liveSensorPanel .value { color: #0f0; font-weight: bold; }
-    #liveSensorPanel .warn { color: orange; }
 
-    /* HUD κύριων ενδείξεων */
     #hud {
       position: absolute; bottom: 130px; left: 20px;
       background: rgba(0,0,0,0.7);
@@ -139,6 +135,9 @@
       border-radius: 50%; background: rgba(0,0,0,0.5);
       border: 1px solid white; display: none;
     }
+    #shareBtn, #downloadBtn {
+      display: none; /* κρυφά μέχρι να δημιουργηθεί το αρχείο */
+    }
   </style>
 </head>
 <body>
@@ -149,7 +148,6 @@
     <div id="crosshair"></div>
     <div id="calibrationNotice">🧭 Χαμηλή ακρίβεια – κουνήστε σε σχήμα 8</div>
 
-    <!-- Μόνιμο πάνελ όλων των αισθητήρων -->
     <div id="liveSensorPanel">
       <div><span class="label">🧭 Alpha:</span> <span id="sAlpha" class="value">--</span></div>
       <div><span class="label">📐 Beta:</span> <span id="sBeta" class="value">--</span></div>
@@ -175,7 +173,9 @@
     <div id="controls">
       <button id="startBtn">▶️ Έναρξη</button>
       <button id="recordBtn" disabled>📍 Καταγραφή Σημείου</button>
-      <button id="generateBtn" disabled>📁 Horizon File</button>
+      <button id="generateBtn" disabled>📁 Δημιουργία Horizon File</button>
+      <button id="downloadBtn">💾 Λήψη</button>
+      <button id="shareBtn">📤 Κοινοποίηση</button>
     </div>
   </div>
 
@@ -192,12 +192,13 @@
       const startBtn = document.getElementById('startBtn');
       const recordBtn = document.getElementById('recordBtn');
       const generateBtn = document.getElementById('generateBtn');
+      const downloadBtn = document.getElementById('downloadBtn');
+      const shareBtn = document.getElementById('shareBtn');
       const chartCanvas = document.getElementById('chartCanvas');
       const ctx = chartCanvas.getContext('2d');
       const horizonBar = document.getElementById('horizonBar');
       const levelIndicator = document.getElementById('levelIndicator');
 
-      // Live sensor panel elements
       const sAlpha = document.getElementById('sAlpha');
       const sBeta = document.getElementById('sBeta');
       const sGamma = document.getElementById('sGamma');
@@ -212,6 +213,7 @@
       let currentAzimuth = null;
       let currentElevation = null;
       let recordedPoints = [];
+      let horizonBlob = null; // αποθηκεύεται κατά τη δημιουργία
 
       const ALPHA_HISTORY = 10;
       let alphaSamples = [];
@@ -280,7 +282,6 @@
         const alpha = event.alpha, beta = event.beta, gamma = event.gamma;
         const absolute = event.absolute;
 
-        // Ενημέρωση live panel
         sAlpha.textContent = alpha !== null ? alpha.toFixed(1) : 'null';
         sBeta.textContent = beta !== null ? beta.toFixed(1) : 'null';
         sGamma.textContent = gamma !== null ? gamma.toFixed(1) : 'null';
@@ -373,6 +374,9 @@
         updateRecordList();
         updateChart();
         generateBtn.disabled = recordedPoints.length < 2;
+        // Απόκρυψη προηγούμενων επιλογών share/download όταν αλλάζουν τα σημεία
+        downloadBtn.style.display = 'none';
+        shareBtn.style.display = 'none';
       }
 
       function updateRecordList() {
@@ -410,8 +414,9 @@
         ctx.stroke();
       }
 
-      function generateHorizonFile() {
-        if (recordedPoints.length<2) return;
+      // Δημιουργία του αρχείου (αποθηκεύεται σε horizonBlob) και εμφάνιση κουμπιών
+      function createHorizonFile() {
+        if (recordedPoints.length < 2) return;
         const pts=[...recordedPoints].sort((a,b)=>a.azimuth-b.azimuth);
         const wrapped=pts.concat([{azimuth:pts[0].azimuth+360,elevation:pts[0].elevation}]);
         const horizon=new Array(360).fill(0);
@@ -425,13 +430,47 @@
         }
         let content='# Horizon file for PVGIS\n# azimuth (0=North) elevation in degrees\n';
         content+=horizon.map(v=>v.toFixed(1)).join('\n')+'\n';
-        const blob=new Blob([content],{type:'text/plain'});
-        const url=URL.createObjectURL(blob);
-        const a=document.createElement('a');a.href=url;a.download='horizon_pvgis.txt';
-        document.body.appendChild(a);a.click();
-        document.body.removeChild(a);URL.revokeObjectURL(url);
+
+        horizonBlob = new Blob([content], {type: 'text/plain'});
+        downloadBtn.style.display = 'inline-block';
+        // Έλεγχος υποστήριξης Web Share API με files
+        if (navigator.share && navigator.canShare &&
+            navigator.canShare({ files: [new File([horizonBlob], 'horizon_pvgis.txt', { type: 'text/plain' })] })) {
+          shareBtn.style.display = 'inline-block';
+        } else {
+          shareBtn.style.display = 'none';
+        }
       }
 
+      function downloadFile() {
+        if (!horizonBlob) return;
+        const url = URL.createObjectURL(horizonBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'horizon_pvgis.txt';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+
+      async function shareFile() {
+        if (!horizonBlob) return;
+        const file = new File([horizonBlob], 'horizon_pvgis.txt', { type: 'text/plain' });
+        try {
+          await navigator.share({
+            files: [file],
+            title: 'Horizon File PVGIS',
+            text: 'Αρχείο ορίζοντα για PVGIS'
+          });
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            alert('Σφάλμα κοινοποίησης: ' + err.message);
+          }
+        }
+      }
+
+      // Event listeners
       startBtn.addEventListener('click', async ()=>{
         startBtn.disabled=true;
         const sensOk=await requestSensors();
@@ -445,7 +484,10 @@
       });
 
       recordBtn.addEventListener('click', addRecordedPoint);
-      generateBtn.addEventListener('click', generateHorizonFile);
+
+      generateBtn.addEventListener('click', createHorizonFile);
+      downloadBtn.addEventListener('click', downloadFile);
+      shareBtn.addEventListener('click', shareFile);
 
       window.addEventListener('deviceorientation', handleOrientation, true);
       window.addEventListener('devicemotion', handleMotion, true);
